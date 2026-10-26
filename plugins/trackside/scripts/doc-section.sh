@@ -17,14 +17,16 @@ docs=$(source_docs "$keep" "${b%%/*}")
 
 # For an ID: the sections whose heading names it, the table rows it defines (with their table's header), then the
 # other lines that mention it, where a later decision may override it. For words: the sections whose heading holds
-# them, or failing that, the lines that do. A section runs to the next heading of the same or a higher level.
+# them all, in any order, or failing that, the lines that do. A section runs to the next heading of the same or a
+# higher level.
 out=$(printf '%s\n' "$docs" | while IFS= read -r d; do
   LC_ALL=C awk -v q="$query" -v doc="$d" '
-    BEGIN { id = (q ~ /^[A-Z]+-[0-9]+$/); lq = tolower(q); re = "(^|[^A-Za-z0-9-])" q "([^0-9]|$)" }
+    BEGIN { id = (q ~ /^[A-Z]+-[0-9]+$/); nw = split(tolower(q), w, /[ \t]+/); re = "(^|[^A-Za-z0-9-])" q "([^0-9]|$)" }
     /^(```|~~~)/ { fence = !fence }
     { line[NR] = $0; fenced[NR] = fence }
     !fence && match($0, /^#+[ \t]/) { n++; hl[n] = NR; lv[n] = RLENGTH - 1; ht[n] = substr($0, RLENGTH + 1) }
-    function hit(t) { return id ? (t ~ re) : (index(tolower(t), lq) > 0) }
+    function words(t,   i) { t = tolower(t); for (i = 1; i <= nw; i++) if (w[i] != "" && !index(t, w[i])) return 0; return 1 }
+    function hit(t) { return id ? (t ~ re) : words(t) }
     END {
       for (i = 1; i <= n; i++) {
         if (!hit(ht[i])) continue
@@ -44,7 +46,7 @@ out=$(printf '%s\n' "$docs" | while IFS= read -r d; do
       m = 0
       for (k = 1; k <= NR; k++) {
         if (shown[k]) continue
-        if (id ? (line[k] ~ re) : (!found && index(tolower(line[k]), lq) > 0)) {
+        if (id ? (line[k] ~ re) : (!found && words(line[k]))) {
           if (m++ == 0) printf "== %s: other lines that %s\n", doc, (id ? "mention " q : "contain it")
           if (m <= 15) printf "%d: %s\n", k, substr(line[k], 1, 240)
         }
@@ -52,10 +54,17 @@ out=$(printf '%s\n' "$docs" | while IFS= read -r d; do
       if (m > 15) printf "… and %d more\n", m - 15
     }' "$root/$d"
 done)
-if [ -z "$out" ]; then
-  echo "Nothing in the source docs matches \"$query\". Try other words from the heading, or an ID."
-elif [ "$(bytes "$out")" -gt 8000 ]; then
-  printf '%s\n%s\n' "$(printf '%s' "$out" | lines_within 8000)" "[Cut at 8,000 bytes: read the docs at the lines above for the rest.]"
+[ -n "$out" ] || { echo "Nothing in the source docs matches \"$query\". Try other words from the heading, or an ID."; exit 0; }
+# With several matches, where each one is comes first, so a cut never hides where to read the rest.
+index=""
+n=$(printf '%s\n' "$out" | grep -c '^== ')
+if [ "$n" -gt 1 ]; then
+  index="Matches ($n):"$'\n'"$(printf '%s\n' "$out" | grep '^== ' | head -n 50 | sed 's/^== /- /')"$'\n'
+  [ "$n" -le 50 ] || index+="… and $((n - 50)) more: use more words, or an ID, to narrow it"$'\n'
+fi
+room=$(( 8000 - $(bytes "$index") ))
+if [ "$(bytes "$out")" -gt "$room" ]; then
+  printf '%s%s\n%s\n' "$index" "$(printf '%s' "$out" | lines_within "$room")" "[Cut at 8,000 bytes: read the rest in the docs, at the matches listed first.]"
 else
-  printf '%s\n' "$out"
+  printf '%s%s\n' "$index" "$out"
 fi

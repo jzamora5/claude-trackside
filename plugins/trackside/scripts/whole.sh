@@ -23,24 +23,28 @@ echo "This chat stays whole: trackside won't offer to continue it in a fresh cha
 t=$(find "$HOME/.claude/projects" -maxdepth 2 -name "$sid.jsonl" 2>/dev/null | head -n 1)
 [ -z "$t" ] || echo "Its transcript: ${t/#$HOME/~}"
 
-# The later file wins, as in Claude Code's own order: user, then project, then local settings.
+# setting <key> <files...>: the key's value in the last of the files that sets it, as Claude Code reads them in order.
 setting() {
-  local v="" f x
-  for f in "$HOME/.claude/settings.json" "$root/.claude/settings.json" "$root/.claude/settings.local.json"; do
-    x=$(jq -r --arg k "$1" '.[$k] // empty' "$f" 2>/dev/null) && [ -n "$x" ] && v=$x
+  local k="$1" v="" f x
+  shift
+  for f in "$@"; do
+    x=$(jq -r --arg k "$k" '.[$k] // empty' "$f" 2>/dev/null) && [ -n "$x" ] && v=$x
   done
   printf '%s' "$v"
 }
+keep_days=$(setting cleanupPeriodDays "$HOME/.claude/settings.json" "$root/.claude/settings.json" "$root/.claude/settings.local.json")
+from="cleanupPeriodDays in your settings"
+[[ "$keep_days" =~ ^[0-9]+$ ]] || { keep_days=30; from="cleanupPeriodDays, the default"; }
 if [ "${CLAUDE_CODE_ENTRYPOINT:-}" = claude-desktop ]; then
-  days=$(setting desktopSessionCleanupPeriodDays)
-  if [ -z "$days" ]; then
-    echo "Claude Code keeps the transcripts of desktop app chats at any age, since desktopSessionCleanupPeriodDays isn't set."
+  # Claude Code reads this key only from user or managed settings, and 0 means no age limit. A desktop transcript is
+  # deleted once it's older than both this and cleanupPeriodDays.
+  days=$(setting desktopSessionCleanupPeriodDays "$HOME/.claude/settings.json")
+  if ! [[ "$days" =~ ^[0-9]+$ ]] || [ "$days" = 0 ]; then
+    echo "Claude Code keeps the transcripts of desktop app chats at any age: desktopSessionCleanupPeriodDays isn't above 0 in your user settings (managed settings could still set it)."
   else
-    echo "Claude Code deletes desktop app transcripts after $days days (desktopSessionCleanupPeriodDays); raise it, or copy the transcript, to keep this one longer."
+    [ "$days" -ge "$keep_days" ] || days=$keep_days
+    echo "Claude Code deletes a desktop app transcript once it goes $days days unused (the larger of desktopSessionCleanupPeriodDays and $from); raise them, or copy the transcript, to keep this one longer."
   fi
 else
-  days=$(setting cleanupPeriodDays)
-  from="cleanupPeriodDays in your settings"
-  [ -n "$days" ] || { days=30; from="cleanupPeriodDays, the default"; }
-  echo "Claude Code deletes a transcript once it goes $days days unused ($from); raise it, or copy the transcript, to keep this one longer."
+  echo "Claude Code deletes a transcript once it goes $keep_days days unused ($from); raise it, or copy the transcript, to keep this one longer."
 fi

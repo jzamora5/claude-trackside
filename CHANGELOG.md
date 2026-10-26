@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.20.1 · 2026-10-26
+
+Fixes from an audit of 0.20.0.
+
+- A shell command that only reads `STATE.md` no longer counts as a save. Before, any command naming the file within a minute of an edit, even another chat's, cleared the unsaved markers and rewrote the git stamp, so the next chat's freshness check missed work. Now a PreToolUse hook notes the file's checksum before a Bash command that names it, and the command counts as a save only when the file changed while it ran.
+- The note a chat leaves when it ends a turn with unsaved work now names that chat, and a SessionEnd hook marks it once the chat ends, is cleared or switched away from. A chat opened on the track while the first is still open is told to leave that work to it, instead of being told the first one "ended" and rewriting Current from work it didn't do. The next chat after the first ends, or after it leaves the note for a day, fills the gap; another chat's save no longer deletes the note.
+- `/trackside:whole` reports transcript retention the way Claude Code applies it: `desktopSessionCleanupPeriodDays` of 0 means no age limit, a desktop transcript lasts as long as the larger of it and `cleanupPeriodDays`, and that key is read only from user settings (managed settings may still set it).
+- The judge also reads the feature's `DECISIONS.md`, so a chat bringing back a rejected option can be caught. Each file it reads is cut at 40 KB.
+- `/trackside:save` ends its reply at "Saved." and what it wrote, without telling you to clear; `/trackside:fresh` does that.
+- `/trackside:lookup` lists where each match is before the text when there are several (up to 50), so a cut never hides where to read the rest, and heading words match in any order.
+- When it creates `.trackside/`, the agent offers a third choice: an `Edit(/.trackside/**)` allow rule in the project's `.claude/settings.local.json`, kept out of git, so saves don't prompt each time.
+- The reload's output limits come from one constant. README: the judge is the one model call, and two leftover mentions of the old name are fixed.
+
 ## 0.20.0 · 2026-10-26
 
 - Long chats are offered a fresh start, and never pushed into one. At each message trackside reads the chat's context size from its transcript. Once it reaches 90% of the size at which that model's chats compact on their own (`TRACKSIDE_OFFER_PERCENT`), or after `COMPACT_LIMIT` compactions, the agent asks once, in a line before its answer, and again only after the next compaction. trackside learns that size per model from the automatic compactions it sees (the largest, since an idle compaction can run early), or takes it from `CLAUDE_CODE_AUTO_COMPACT_WINDOW`. This replaces the reload's request to save and `/clear` after two compactions.

@@ -275,7 +275,11 @@ repos_of() {
 # reload is two outputs: load.sh's messages with FEATURE.md and CONTEXT.md, and load-state.sh's STATE.md, with
 # LESSONS.md after it on a track whose items start clean. Each part stays under reload_budget, counted in bytes (never
 # fewer than characters); cuts fall at line ends, and a file that doesn't fit loses whole sections, which are named.
-reload_budget=9300
+hook_limit=10000
+reload_budget=$(( hook_limit - 700 ))
+# An output still over cut_over is cut to cut_to, which leaves room for the line that says so.
+cut_over=$(( hook_limit - 200 ))
+cut_to=$(( hook_limit - 400 ))
 
 # chat_binding <keep> <session id> <title>: the track a starting chat is on: its binding, else the track its title
 # names when trackside named the chat, else the track remembered for a name the user gave it. Reads only, so the two
@@ -378,8 +382,8 @@ reload_state() {
   o="The state of $2, the track this chat is on:"$'\n'
   o+="$(emit_file "STATE.md" "$tdir/STATE.md" $(( reload_budget - 200 - held )) "Inbox" "Current" "Next step")"$'\n'
   [ "$last" = "$tdir/STATE.md" ] || o+="$(emit_file "LESSONS.md" "$last" $(( reload_budget - $(bytes "$o") - 100 )))"$'\n'
-  if [ "$(bytes "$o")" -gt 9800 ]; then
-    o="$(printf '%s' "$o" | lines_within 9600)"$'\n'"[Cut to stay under the hook output limit: read $(rel "$last") in full.]"
+  if [ "$(bytes "$o")" -gt "$cut_over" ]; then
+    o="$(printf '%s' "$o" | lines_within "$cut_to")"$'\n'"[Cut to stay under the hook output limit: read $(rel "$last") in full.]"
   fi
   printf '%s' "$o"
 }

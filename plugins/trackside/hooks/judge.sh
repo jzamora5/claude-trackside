@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Stop, in the background: once a bound chat's context passes TRACKSIDE_JUDGE_TOKENS (default 400000; 0 turns it off),
-# a cheaper model (TRACKSIDE_JUDGE_MODEL, default haiku) compares the chat's last messages with the track's files, at
-# most once each time the chat compacts and never once a fresh chat is due anyway. It runs as its own Claude Code
-# process, so the chat spends nothing on it. Only findings whose quotes appear word for word, the chat's in its own
-# replies and the track's in the file named, are kept for the prompt hook to show. Each run logs its counts, never
-# the chat's text, to .state/judge-log.
+# a cheaper model (TRACKSIDE_JUDGE_MODEL, default haiku) compares the chat's last messages with the track's files and
+# the feature's DECISIONS.md, each cut at 40 KB, at most once each time the chat compacts and never once a fresh chat
+# is due anyway. It runs as its own Claude Code process, so the chat spends nothing on it. Only findings whose quotes
+# appear word for word, the chat's in its own replies and the track's in the file named, are kept for the prompt hook
+# to show. Each run logs its counts, never the chat's text, to .state/judge-log.
 . "$(dirname "$0")/lib.sh"
 here="$(cd "$(dirname "$0")" && pwd)"
 line="${TRACKSIDE_JUDGE_TOKENS:-400000}"
@@ -29,9 +29,10 @@ last=$(field .last_assistant_message)
 norm() { tr -s ' \t\r\n' ' ' | tr -d '*`'; }
 jq -r 'select(.r == "ASSISTANT") | .x' "$w/messages" | norm > "$w/said"
 {
-  for f in "$keep/${binding%%/*}/FEATURE.md" "$keep/$binding/CONTEXT.md" "$keep/$binding/LESSONS.md" "$keep/$binding/STATE.md"; do
+  for f in "$keep/${binding%%/*}/FEATURE.md" "$keep/${binding%%/*}/DECISIONS.md" "$keep/$binding/CONTEXT.md" \
+    "$keep/$binding/LESSONS.md" "$keep/$binding/STATE.md"; do
     [ -f "$f" ] || continue
-    printf '=== FILE %s ===\n' "${f##*/}"; cat "$f"; printf '\n'
+    printf '=== FILE %s ===\n' "${f##*/}"; lines_within 40000 < "$f"; printf '\n'
     norm < "$f" > "$w/file-${f##*/}"
   done
   printf '=== CHAT ===\n'

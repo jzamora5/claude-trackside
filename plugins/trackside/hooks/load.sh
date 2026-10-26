@@ -55,9 +55,19 @@ add "The user may call a track a workspace; /trackside:current shows this one."
 add "STATE.md is the handoff for the next chat and must stay current. Record each decision as soon as it's made, with the options rejected and why, where FEATURE.md says decisions go. Write down only what a new chat couldn't get from the code, git, the docs or a command: no copied file contents, diffs or test output; point to them instead."
 add "Keep trackside's bookkeeping out of your replies: update STATE.md before you write a reply, not after it, and don't tell the user about saves, fixes the automatic check asked for, or commits of the trackside folder. Mention trackside only when the user has to decide something, in a line before the rest of your reply, never after a question you ask."
 [ -z "$(source_docs "$keep" "${binding%%/*}")" ] || add "The source docs FEATURE.md lists are the source of truth: before you state, decide or change anything they cover, read it with the trackside lookup skill (/trackside:lookup <ID or heading words>), which prints the exact text, instead of trusting what STATE.md says, and cite what you use by ID (such as AD-28) or heading."
-unsaved="$(stamp_file "$keep" "$binding").unsaved"
-if [ -s "$unsaved" ] && [ -z "$worktree" ]; then
-  add "The last chat on this track ended on $(cat "$unsaved") with work STATE.md doesn't have yet. Before your first reply, update its Current and Next step from what changed (below) and the code, without mentioning it."
+# The note names the chat with unsaved work. That chat itself is asked at its next message. Another chat fills the gap
+# only once that chat has ended, or left it for a day; a chat from before notes named one has only the date.
+note="$(stamp_file "$keep" "$binding").unsaved"
+if [ -s "$note" ] && [ -z "$worktree" ]; then
+  IFS=$'\t' read -r when who how < "$note"
+  if [ "${who:-}" != "$sid" ]; then
+    if [ -z "${who:-}" ] || [ "${how:-}" = ended ] || [ -n "$(find "$note" -mmin +1440 2>/dev/null)" ]; then
+      add "The last chat on this track left off on $when with work STATE.md doesn't have yet. Before your first reply, update its Current and Next step from what changed (below) and the code, without mentioning it."
+      touch "$st/gap-$sid"
+    else
+      add "Another chat on this track, still open, has work STATE.md doesn't have yet (its last turn ended $when). It saves that work at its next message, so don't fill it in from here."
+    fi
+  fi
 fi
 if starts_clean "$keep" "$binding"; then
   add "Each item on this track starts clean: only CONTEXT.md and LESSONS.md carry over from one item to the next. LESSONS.md says how to finish an item."
@@ -91,8 +101,8 @@ if [ -z "$worktree" ]; then
   fi
 fi
 out+="$(reload_files "$keep" "$binding" $(( budget - $(bytes "$out") - 200 )))"$'\n'
-if [ "$(bytes "$out")" -gt 9800 ]; then
-  out="$(printf '%s' "$out" | lines_within 9600)"$'\n'"[Cut to stay under the hook output limit: read $(rel "$tdir")/CONTEXT.md in full.]"
+if [ "$(bytes "$out")" -gt "$cut_over" ]; then
+  out="$(printf '%s' "$out" | lines_within "$cut_to")"$'\n'"[Cut to stay under the hook output limit: read $(rel "$tdir")/CONTEXT.md in full.]"
 fi
 printf '%s' "$out"
 exit 0

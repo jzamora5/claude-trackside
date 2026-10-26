@@ -60,5 +60,7 @@ A plugin installed from a local folder is read from that folder, so changes take
 | 36 | The same in the terminal | It saves and tells you to type `/clear`; after `/clear` the chat is on `demo/tickets` again |
 | 37 | In a bound chat, `/trackside:whole`, then `/trackside:whole off` | It says the chat stays whole, where its transcript is and how long Claude Code keeps it, and then that the offers come back. No permission prompt for either |
 | 38 | In a bound chat, `export TRACKSIDE_JUDGE_TOKENS=1` before starting Claude Code, then plant a reply that contradicts `STATE.md` and end the turn; send another message | Within a few seconds `.state/judge-log` has a line, and the next message brings the disagreement and, if the reply was wrong, the offer of a fresh chat. Repeat in the desktop app, where the judge must find the `claude` command too |
+| 39 | Two chats on `demo/tickets`: in the first, make an edit and end the turn without saving; then open the second | The second is told another open chat has unsaved work and leaves it alone; after you close or `/clear` the first, a new chat on the track is told the last one left off and fills the gap |
+| 40 | In a bound chat, ask the agent to `cat` STATE.md right after another chat saved the track | The first chat is still asked to save before its next answer |
 
 Write down anything that differs, with the exact output.

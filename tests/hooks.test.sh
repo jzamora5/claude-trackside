@@ -196,9 +196,30 @@ touch -t "$(mins_ago 20)" "$st/saved-s1"
 ok "TRACKSIDE_SAVE_MINUTES moves the wait" '! TRACKSIDE_SAVE_MINUTES=30 owed s1'
 hook bind '{"session_id":"s10","prompt":"/trackside:start shop/tickets"}' >/dev/null; edit s10 Edit "$K/shop/tickets/STATE.md"
 ok "another chat saving the same track doesn't silence this one" 'owed s1'; rm -f "$st/track-s10" "$st/saved-s10"
-ok "the Stop hook adds nothing after the reply" '[ -z "$(stop s1 false)" ] && [ -s "$st/stamp-shop@tickets.unsaved" ]'
-out=$(hook load '{"session_id":"n7","source":"clear","session_title":"shop/tickets"}'); rm -f "$st"/*-n7
-ok "a new chat on that track is told the last one ended with work STATE.md doesn't have" '[[ "$out" == *"The last chat on this track ended on "*" with work STATE.md doesn'"'"'t have yet. Before your first reply, update its Current and Next step"* ]]'
+ok "the Stop hook adds nothing after the reply, and leaves a note on the track naming the chat" '[ -z "$(stop s1 false)" ] && [ "$(cut -f2- "$st/stamp-shop@tickets.unsaved")" = "s1	-" ]'
+note="$st/stamp-shop@tickets.unsaved"
+printf 'shop/tickets\n' > "$st/track-n6"; out=$(hook load '{"session_id":"n6","source":"startup"}')
+ok "a chat opened on the track while that one is open leaves its work to it" '[[ "$out" == *"Another chat on this track, still open, has work STATE.md doesn'"'"'t have yet"* && "$out" != *"Before your first reply"* ]] && [ ! -f "$st/gap-n6" ]'
+edit n6 Edit "$K/shop/tickets/STATE.md"
+ok "and its save leaves the note for that chat" '[ -s "$note" ]'
+out=$(hook load '{"session_id":"s1","source":"resume"}')
+ok "the chat that left the note isn't told about it at a resume; its next message asks for the save" '[[ "$out" != *"left off"* && "$out" != *"Another chat"* ]]'
+hook end '{"session_id":"s1","reason":"clear"}'
+ok "once that chat ends or is cleared, the note says so" '[ "$(cut -f2- "$note")" = "s1	ended" ]'
+out=$(hook load '{"session_id":"n7","source":"clear","session_title":"shop/tickets"}')
+ok "and the next chat on the track fills the gap" '[[ "$out" == *"The last chat on this track left off on "*" with work STATE.md doesn'"'"'t have yet. Before your first reply, update its Current and Next step"* ]] && [ -f "$st/gap-n7" ]'
+cp "$note" "$R/note.tmp"; edit n7 Edit "$K/shop/tickets/STATE.md"
+ok "its save clears the note" '[ ! -f "$note" ] && [ ! -f "$st/gap-n7" ]'
+mv "$R/note.tmp" "$note"; sed -i '' 's/ended$/-/' "$note"; touch -t "$(mins_ago 1500)" "$note"; printf 'shop/tickets\n' > "$st/track-n8"
+out=$(hook load '{"session_id":"n8","source":"startup"}')
+ok "a note an open chat left a day ago counts as left behind too" '[[ "$out" == *"The last chat on this track left off on"* ]]'
+printf '2026-10-01 10:00\n' > "$note"
+out=$(hook load '{"session_id":"n8","source":"startup"}')
+ok "so does a note from before notes named the chat" '[[ "$out" == *"left off on 2026-10-01 10:00 with work"* ]]'
+printf '%s\t%s\t-\n' "2026-10-26 10:00" s1 > "$note"; rm -f "$st"/*-n[678]
+rm -f "$st/dirty-n9"; printf 'shop/tickets\n' > "$st/track-n9"; cp "$note" "$R/note.tmp"
+hook end '{"session_id":"n9","reason":"other"}'
+ok "a chat that ends with nothing unsaved leaves no note" 'cmp -s "$note" "$R/note.tmp"'; rm -f "$R/note.tmp" "$st/track-n9"
 printf 'shop/tickets' > "$st/title-s1"
 both=$(hook bind '{"session_id":"s1","prompt":"what about the totals?"}')
 ok "one prompt can carry the chat's new name and the reminder" '[ "$(jq -r .hookSpecificOutput.sessionTitle <<<"$both")" = shop/tickets ] && [[ "$(jq -r .hookSpecificOutput.additionalContext <<<"$both")" == *"Before you answer this message"* ]]'
@@ -229,14 +250,23 @@ ok "the matcher passes edits, research and Bash, not Read" '[[ "Edit" =~ ^($m)$ 
 printf 'shop/tickets\n' > "$st/track-sb"
 hook track "{\"session_id\":\"sb\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"sed -i '' s/a/b/ api/cart.js\"}}"
 ok "a shell command that doesn't touch STATE.md still doesn't count as work" '[ ! -f "$st/dirty-sb" ] && [ ! -f "$st/saved-sb" ]'
-touch "$st/dirty-sb" "$st/owed-sb" "$st/nudged-sb"; touch -t "$(date -v-5M +%Y%m%d%H%M 2>/dev/null || date -d '5 minutes ago' +%Y%m%d%H%M)" "$K/shop/tickets/STATE.md"
-hook track "{\"session_id\":\"sb\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"wc -c $K/shop/tickets/STATE.md\"}}" >/dev/null
-ok "a command that only reads STATE.md isn't a save" '[ -f "$st/dirty-sb" ] && [ ! -f "$st/saved-sb" ]'
-touch "$K/shop/tickets/STATE.md"
-hook track "{\"session_id\":\"sb\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"cd $K/shop/tickets && sed -i '' s/x/y/ STATE.md\"}}" >/dev/null
+# sh <session> <command> [cwd] [change]: a Bash call as Claude Code reports it, before and after; with "change", the
+# command changes STATE.md while it runs.
+sh() {
+  local j="{\"session_id\":\"$1\",\"tool_name\":\"Bash\",\"cwd\":\"${3:-$R}\",\"tool_input\":{\"command\":\"$2\"}"
+  hook track "$j,\"hook_event_name\":\"PreToolUse\"}" >/dev/null
+  [ -z "${4:-}" ] || printf '\n' >> "$K/shop/tickets/STATE.md"
+  hook track "$j,\"hook_event_name\":\"PostToolUse\"}" >/dev/null
+}
+touch "$st/dirty-sb" "$st/owed-sb" "$st/nudged-sb" "$K/shop/tickets/STATE.md"
+sh sb "wc -c $K/shop/tickets/STATE.md"
+ok "a command that only reads STATE.md isn't a save, even right after the file changed" '[ -f "$st/dirty-sb" ] && [ ! -f "$st/saved-sb" ] && [ ! -f "$st/before-sb" ]'
+hook track "{\"session_id\":\"sb\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"sed -i '' s/x/y/ $K/shop/tickets/STATE.md\"}}" >/dev/null
+ok "nor is a change Claude Code didn't report a start for" '[ ! -f "$st/saved-sb" ]'
+sh sb "cd $K/shop/tickets && sed -i '' s/x/y/ STATE.md" "" change
 ok "a save through the shell counts like an Edit, owed save and reminder included" '[ -f "$st/saved-sb" ] && [ ! -f "$st/dirty-sb" ] && [ ! -f "$st/owed-sb" ] && [ ! -f "$st/nudged-sb" ]'
 touch "$st/dirty-sb"; rm -f "$st/saved-sb"
-hook track "{\"session_id\":\"sb\",\"tool_name\":\"Bash\",\"cwd\":\"$K/shop/tickets\",\"tool_input\":{\"command\":\"sed -i '' s/x/y/ STATE.md\"}}" >/dev/null
+sh sb "sed -i '' s/x/y/ STATE.md" "$K/shop/tickets" change
 ok "so does one run from the track's folder by name only" '[ -f "$st/saved-sb" ] && [ ! -f "$st/dirty-sb" ]'
 touch "$st/dirty-sb"; rm -f "$st/saved-sb"
 hook track "{\"session_id\":\"sb\",\"tool_name\":\"Bash\",\"cwd\":\"$R\",\"tool_input\":{\"command\":\"sed -i '' s/x/y/ other/STATE.md\"}}" >/dev/null
@@ -459,9 +489,20 @@ ok "keeping a chat whole says how long Claude Code keeps its transcript" '[[ "$o
 mkdir -p "$R/.claude"; printf '{"cleanupPeriodDays": 365}\n' > "$R/.claude/settings.json"
 out=$(CLAUDE_CODE_ENTRYPOINT=cli HOME="$R/nohome" bash "$H/scripts/whole.sh" "$R" l7 on)
 ok "from the settings that set it" '[[ "$out" == *"365 days unused (cleanupPeriodDays in your settings)"* ]]'
-out=$(CLAUDE_CODE_ENTRYPOINT=claude-desktop HOME="$R/nohome" bash "$H/scripts/whole.sh" "$R" l7 on)
-ok "and, for the desktop app, its own setting" '[[ "$out" == *"at any age, since desktopSessionCleanupPeriodDays isn'"'"'t set"* ]]'
-rm -f "$R/.claude/settings.json"
+dw() { CLAUDE_CODE_ENTRYPOINT=claude-desktop HOME="$R/nohome" bash "$H/scripts/whole.sh" "$R" l7 on; }
+printf '{"cleanupPeriodDays": 365, "desktopSessionCleanupPeriodDays": 7}\n' > "$R/.claude/settings.json"
+out=$(dw)
+ok "for the desktop app, its own setting counts only in user settings" '[[ "$out" == *"at any age: desktopSessionCleanupPeriodDays isn'"'"'t above 0 in your user settings"* ]]'
+mkdir -p "$R/nohome/.claude"; printf '{"desktopSessionCleanupPeriodDays": 0}\n' > "$R/nohome/.claude/settings.json"
+out=$(dw)
+ok "where 0 means no age limit" '[[ "$out" == *"at any age"* ]]'
+rm -f "$R/.claude/settings.json"; printf '{"desktopSessionCleanupPeriodDays": 7}\n' > "$R/nohome/.claude/settings.json"
+out=$(dw)
+ok "and a desktop transcript is kept as long as the larger of it and cleanupPeriodDays" '[[ "$out" == *"once it goes 30 days unused (the larger of desktopSessionCleanupPeriodDays and cleanupPeriodDays, the default)"* ]]'
+printf '{"desktopSessionCleanupPeriodDays": 90}\n' > "$R/nohome/.claude/settings.json"
+out=$(dw)
+ok "whichever that is" '[[ "$out" == *"once it goes 90 days unused"* ]]'
+rm -rf "${R:?}/nohome"
 out=$(bash "$H/scripts/whole.sh" "$R" l7 2>&1; echo "exit=$?")
 ok "the whole script wants on or off" '[[ "$out" == *"exit=1" ]]'
 touch "$st/judged-l1" "$st/health-l1"
@@ -477,9 +518,10 @@ J=$(mktemp -d "${TMPDIR:-/tmp}/trackside-judge.XXXXXX"); js="$J/.trackside/.stat
 mkdir -p "$js" "$J/.trackside/app/main" "$J/bin"
 printf '# Feature: app\n' > "$J/.trackside/app/FEATURE.md"
 printf '# State: app/main\n\n## Current\n- Decision: **discounts** round to the nearest cent, never to whole dollars.\n' > "$J/.trackside/app/main/STATE.md"
+printf '# Decisions: app\n\n## D-001 · Totals\n- Rejected: storing totals as floats, because cents drift.\n' > "$J/.trackside/app/DECISIONS.md"
 printf 'app/main\n' > "$js/track-j1"
-# A stand-in for the claude CLI: it records how it was called and what it read, and answers with three findings, of
-# which only the first quotes both sides word for word, and a line in no known form.
+# A stand-in for the claude CLI: it records how it was called and what it read, and answers with four findings, of
+# which the first and last quote both sides word for word, and a line in no known form.
 cat > "$J/bin/claude" <<'STUB'
 #!/usr/bin/env bash
 d="$(dirname "$0")"
@@ -489,6 +531,7 @@ cat <<'OUT'
 1. We round discounts down to whole dollars ||| STATE.md ||| discounts round to the nearest cent, never to whole dollars ||| floor vs cents
 We always charge shipping on every order ||| STATE.md ||| discounts round to the nearest cent, never to whole dollars ||| never said
 We round discounts down to whole dollars ||| NOTES.md ||| discounts round to the nearest cent, never to whole dollars ||| not a file it read
+I will store totals as floats from now on ||| DECISIONS.md ||| Rejected: storing totals as floats, because cents drift ||| reopens a rejected option
 a line in no known form
 OUT
 STUB
@@ -496,15 +539,15 @@ chmod +x "$J/bin/claude"
 { jq -n -c '{type:"user",isSidechain:false,message:{role:"user",content:"Which rounding do we use?"}}'
   jq -n -c '{type:"user",isSidechain:false,message:{role:"user",content:[{type:"tool_result",content:"TOOL OUTPUT"}]}}'
   jq -n -c '{type:"user",isSidechain:false,message:{role:"user",content:"<task-notification> NOTICE </task-notification>"}}'
-  jq -n -c '{type:"assistant",isSidechain:false,message:{model:"m-1",content:[{type:"text",text:"We round discounts\ndown to whole dollars, so I floor it."}],usage:{input_tokens:2,cache_read_input_tokens:499998,cache_creation_input_tokens:0}}}'
+  jq -n -c '{type:"assistant",isSidechain:false,message:{model:"m-1",content:[{type:"text",text:"We round discounts\ndown to whole dollars, so I floor it. I will store totals as floats from now on."}],usage:{input_tokens:2,cache_read_input_tokens:499998,cache_creation_input_tokens:0}}}'
 } > "$J/t.jsonl"
 jd() { printf '{"session_id":"j1","transcript_path":"%s","last_assistant_message":"Done, it floors now."}' "$J/t.jsonl" | PATH="$J/bin:$PATH" CLAUDE_PROJECT_DIR="$J" "$H/hooks/judge.sh"; }
 runs() { cat "$J/bin/runs" 2>/dev/null || echo 0; }
 jd
 ok "past 400K tokens the judge runs as its own Claude Code process, without tools, settings or a saved session" '[ "$(runs)" = 1 ] && [ "$(cat "$J/bin/child")" = 1 ] && [[ "$(cat "$J/bin/args")" == "-p --model haiku --tools  --strict-mcp-config --no-session-persistence --disable-slash-commands --setting-sources  --system-prompt-file $H/hooks/judge.md" ]]'
-ok "it reads the track's files and the chat's words, with the reply that just ended, and no tool output or notices" 'grep -q "^=== FILE STATE.md ===" "$J/bin/stdin" && grep -q "^USER: Which rounding" "$J/bin/stdin" && grep -q "^ASSISTANT: We round discounts" "$J/bin/stdin" && grep -q "^ASSISTANT: Done, it floors now." "$J/bin/stdin" && ! grep -q "TOOL OUTPUT" "$J/bin/stdin" && ! grep -q NOTICE "$J/bin/stdin"'
-ok "only a finding quoting the chat's replies and the file it names word for word is kept" '[ "$(grep -c "" "$js/health-j1")" = 1 ] && [ "$(cat "$js/health-j1")" = "- The chat said \"We round discounts down to whole dollars\"; STATE.md says \"discounts round to the nearest cent, never to whole dollars\" (floor vs cents)" ]'
-ok "its log counts what it found and keeps none of the chat's words" '[[ "$(cat "$js/judge-log")" == *"	app/main	m-1	500000	found 3	kept 1" ]] && ! grep -q round "$js/judge-log"'
+ok "it reads the track's files, the feature's decisions and the chat's words, with the reply that just ended, and no tool output or notices" 'grep -q "^=== FILE STATE.md ===" "$J/bin/stdin" && grep -q "^=== FILE DECISIONS.md ===" "$J/bin/stdin" && grep -q "^USER: Which rounding" "$J/bin/stdin" && grep -q "^ASSISTANT: We round discounts" "$J/bin/stdin" && grep -q "^ASSISTANT: Done, it floors now." "$J/bin/stdin" && ! grep -q "TOOL OUTPUT" "$J/bin/stdin" && ! grep -q NOTICE "$J/bin/stdin"'
+ok "only a finding quoting the chat's replies and the file it names word for word is kept" '[ "$(grep -c "" "$js/health-j1")" = 2 ] && [ "$(head -1 "$js/health-j1")" = "- The chat said \"We round discounts down to whole dollars\"; STATE.md says \"discounts round to the nearest cent, never to whole dollars\" (floor vs cents)" ] && grep -q "; DECISIONS.md says \"Rejected: storing totals as floats, because cents drift\"" "$js/health-j1"'
+ok "its log counts what it found and keeps none of the chat's words" '[[ "$(cat "$js/judge-log")" == *"	app/main	m-1	500000	found 4	kept 2" ]] && ! grep -q round "$js/judge-log"'
 jd
 ok "it runs once until the chat compacts" '[ "$(runs)" = 1 ]'
 out=$(printf '{"session_id":"j1","prompt":"next","transcript_path":"%s"}' "$J/t.jsonl" | CLAUDE_PROJECT_DIR="$J" "$H/hooks/bind.sh" | jq -r .hookSpecificOutput.additionalContext)
@@ -618,6 +661,15 @@ ok "a project in a repo's subfolder is excluded by its own path, and ignore alon
 N=$(mktemp -d "${TMPDIR:-/tmp}/trackside-nogit.XXXXXX"); mkdir -p "$N/.trackside"
 out=$(gitenv bash "$H/scripts/setup-git.sh" "$N" ignore history)
 ok "outside a git repo it says there's nothing to ignore and adds the history" '[ -d "$N/.trackside/.git" ] && [[ "$out" == *"isn'"'"'t a git repo"* ]]'
+out=$(gitenv bash "$H/scripts/allow-edits.sh" "$G")
+ok "the allow rule lets saves edit .trackside/ without a prompt, in settings only this user reads" '[ "$(jq -c .permissions.allow "$G/.claude/settings.local.json")" = "[\"Edit(/.trackside/**)\"]" ] && [[ "$out" == "Allowed edits to .trackside/"* ]]'
+ok "and that file stays out of the project's git" 'git -C "$G" check-ignore -q .claude/settings.local.json'
+printf '{"permissions":{"allow":["Bash(ls *)"]},"model":"x"}\n' > "$G/.claude/settings.local.json"
+gitenv bash "$H/scripts/allow-edits.sh" "$G" >/dev/null; out=$(gitenv bash "$H/scripts/allow-edits.sh" "$G")
+ok "it adds the rule once, keeping what the file had" '[ "$(jq -c "[.permissions.allow, .model]" "$G/.claude/settings.local.json")" = "[[\"Bash(ls *)\",\"Edit(/.trackside/**)\"],\"x\"]" ] && [[ "$out" == *"already allowed"* ]] && [ "$(grep -c settings.local.json "$G/.git/info/exclude")" = 1 ]'
+printf 'not json' > "$G/.claude/settings.local.json"
+out=$(gitenv bash "$H/scripts/allow-edits.sh" "$G" 2>&1; echo "exit=$?")
+ok "and leaves a file it can't read alone" '[[ "$out" == *"isn'"'"'t valid JSON"*"exit=1" ]] && [ "$(cat "$G/.claude/settings.local.json")" = "not json" ]'
 rm -rf "$G" "$N"
 
 echo "--- renaming"
@@ -946,13 +998,24 @@ out=$(lu l1 AD-2)
 ok "an ID prints its decision row with the table's header, citable by line" '[[ "$out" == *"== docs/rfc.md:7 · a row of the table at line 4"*"| ID | Date | Decision |"*"| AD-2 | 2026-10-02 | The form takes the full SSN; overrides 4.2 |"* ]]'
 ok "then the other lines that mention it, where an older section may disagree" '[[ "$out" == *"other lines that mention AD-2"*"It takes the last four of the SSN (see AD-2)."* ]]'
 out=$(lu l1 AD-1)
-ok "a row inside a code block isn't read as a decision, only listed as a mention" '[ "$(printf "%s\n" "$out" | grep -c "a row of the table")" = 1 ] && [[ "$out" == *"other lines that mention AD-1"*"15: | AD-1 | in a code block |"* ]]'
+ok "a row inside a code block isn't read as a decision, only listed as a mention" '[ "$(printf "%s\n" "$out" | grep -c "^== .*a row of the table")" = 1 ] && [[ "$out" == *"other lines that mention AD-1"*"15: | AD-1 | in a code block |"* ]]'
 out=$(lu l1 "payout bank")
 ok "heading words print that section, up to the next heading of its level or higher" '[[ "$out" == *"== docs/rfc.md:18-19 · 5.1 Payout bank"*"Collected at the first withdrawal."* ]]'
 out=$(lu l1 "KYC")
 ok "a section includes its subsections, and a ## line in a code block doesn't end it" '[[ "$out" == *"== docs/rfc.md:9-16 · 4. KYC"*"### 4.2 The form"*"## not a heading"* && "$out" != *"Payout bank"* ]]'
 out=$(lu l1 "first withdrawal")
 ok "words in no heading fall back to the lines that hold them" '[[ "$out" == *"other lines that contain it"*"19: Collected at the first withdrawal."* ]]'
+out=$(lu l1 "bank payout")
+ok "heading words match in any order" '[[ "$out" == *"== docs/rfc.md:18-19 · 5.1 Payout bank"* ]]'
+out=$(lu l1 AD-2)
+ok "several matches are listed first, each with where it is" '[[ "$out" == "Matches (2):"$'"'"'\n'"'"'"- docs/rfc.md:7 · a row of the table at line 4"$'"'"'\n'"'"'"- docs/rfc.md: other lines that mention AD-2"$'"'"'\n'"'"'"== docs/rfc.md:7"* ]]'
+out=$(lu l1 "payout bank")
+ok "a single match isn't" '[[ "$out" == "== docs/rfc.md:18-19"* ]]'
+{ for i in $(seq 1 70); do printf '## Rule %s\n%s\n' "$i" "$(printf 'filler %.0s' $(seq 1 30))"; done; } > "$LU/docs/rules.md"
+printf '# Feature: pay\n\n**Source docs:** `docs/rfc.md`, `docs/rules.md`\n' > "$LK/pay/FEATURE.md"
+out=$(lu l1 "rule")
+ok "a cut keeps the list of matches, up to 50, ahead of the text" '[ "$(printf "%s" "$out" | wc -c)" -le 8100 ] && [[ "$out" == "Matches (70):"*"- docs/rules.md:"*"Rule 50"$'"'"'\n'"'"'"… and 20 more: use more words, or an ID, to narrow it"*"[Cut at 8,000 bytes: read the rest in the docs, at the matches listed first.]" ]]'
+printf '# Feature: pay\n\n**Source docs:** `docs/rfc.md`\n' > "$LK/pay/FEATURE.md"
 out=$(lu l1 "nothing like this")
 ok "and nothing matching says so" '[[ "$out" == "Nothing in the source docs matches"* ]]'
 ok "the lookup skill runs it pre-approved, and tells the chat to follow newer decisions" 'grep -q "Bash(bash \"\${CLAUDE_SKILL_DIR}/../../scripts/doc-section.sh\" \*)" "$H/skills/lookup/SKILL.md" && grep -q "Newer decisions override older sections" "$H/skills/lookup/SKILL.md"'
@@ -993,7 +1056,7 @@ ok "every skill pre-approves the trackside scripts and .trackside commits it run
 ok "done marks the ticket done only after the commit is approved, and stops on a failed check" 'grep -q "Until then, the ticket stays open" "$H/skills/done/SKILL.md" && grep -q "If any of them fails, report it and stop" "$H/skills/done/SKILL.md"'
 ok "next checks only the repos the ticket touches" 'grep -q "in each repo the ticket touches" "$H/skills/next/SKILL.md"'
 ok "save lists what it recorded" 'grep -q "one line for each decision, Inbox line or rule you wrote" "$H/skills/save/SKILL.md"'
-ok "the git offer comes only when .trackside/ is created" 'grep -q "If \`\${CLAUDE_PROJECT_DIR}/.trackside/\` doesn'"'"'t exist yet, also offer two separate choices" "$H/skills/start/SKILL.md"'
+ok "the git offer comes only when .trackside/ is created" 'grep -q "If \`\${CLAUDE_PROJECT_DIR}/.trackside/\` doesn'"'"'t exist yet, also offer three separate choices" "$H/skills/start/SKILL.md"'
 ok "new tracks don't load NOTES.md at every start" '! grep -q "^\*\*Read on start:\*\*" "$H/templates/CONTEXT.md"'
 ok "next, done and save read the chat's binding before acting" '[ "$(grep -l "track-\${CLAUDE_SESSION_ID}" "$H"/skills/{next,done,save}/SKILL.md | wc -l | tr -d " ")" = 3 ]'
 ok "next and done say they only apply in a chat bound to a track" '[ "$(grep -l "^description: In a chat bound to a track" "$H"/skills/{next,done}/SKILL.md | wc -l | tr -d " ")" = 2 ]'
