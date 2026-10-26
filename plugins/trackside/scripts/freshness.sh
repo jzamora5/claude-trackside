@@ -54,7 +54,7 @@ if [ -s "$docs" ]; then
   if [ -z "$report" ]; then
     echo "Source docs: no changes since STATE.md was last written."
   else
-    echo "Source docs changed since STATE.md was last written. Before relying on what STATE.md says about these parts, ask the doc-expert subagent about them:"
+    echo "Source docs changed since STATE.md was last written. Before relying on what STATE.md says about these parts, read them with the trackside lookup skill:"
     printf '%s' "$report" | grep -v $'^cited\t'
     c=$(printf '%s' "$report" | sed -n $'s/^cited\t//p' | awk 'NR > 1 { printf ", " } { printf "%s", $0 }')
     [ -n "$c" ] && echo "This track's STATE.md or CONTEXT.md cites IDs that changed: $c. Check those lines against the docs."

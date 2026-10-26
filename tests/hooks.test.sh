@@ -218,12 +218,12 @@ for t in WebFetch WebSearch; do
 done
 hook track '{"session_id":"s1","tool_name":"Agent","tool_input":{"subagent_type":"Explore"}}'
 ok "another subagent marks the chat dirty" '[ -f "$st/dirty-s1" ]'; rm -f "$st/dirty-s1"
-hook track '{"session_id":"s1","tool_name":"Agent","tool_input":{"subagent_type":"trackside:doc-expert"}}'
-ok "asking trackside's doc-expert doesn't" '[ ! -f "$st/dirty-s1" ]'
-hook track '{"session_id":"s1","tool_name":"Agent","tool_input":{"subagent_type":"doc-expert"}}'
+hook track '{"session_id":"s1","tool_name":"Agent","tool_input":{"subagent_type":"trackside:auditor"}}'
+ok "asking trackside's auditor doesn't" '[ ! -f "$st/dirty-s1" ]'
+hook track '{"session_id":"s1","tool_name":"Agent","tool_input":{"subagent_type":"auditor"}}'
 ok "nor does the unprefixed name" '[ ! -f "$st/dirty-s1" ]'
-hook track '{"session_id":"s1","tool_name":"Agent","tool_input":{"subagent_type":"my-team:doc-expert"}}'
-ok "another plugin's doc-expert still counts" '[ -f "$st/dirty-s1" ]'; rm -f "$st/dirty-s1"
+hook track '{"session_id":"s1","tool_name":"Agent","tool_input":{"subagent_type":"my-team:auditor"}}'
+ok "another plugin's auditor still counts" '[ -f "$st/dirty-s1" ]'; rm -f "$st/dirty-s1"
 m=$(jq -r '.hooks.PostToolUse[0].matcher' "$H/hooks/hooks.json")
 ok "the matcher passes edits, research and Bash, not Read" '[[ "Edit" =~ ^($m)$ && "Agent" =~ ^($m)$ && "Bash" =~ ^($m)$ && ! "Read" =~ ^($m)$ ]]'
 printf 'shop/tickets\n' > "$st/track-sb"
@@ -653,13 +653,13 @@ rfc '| AD-2 | 2026-10-20 | Last four of the SSN |
 out=$(bash "$H/scripts/freshness.sh" "$D" pay/main)
 ok "a changed doc lists the sections and IDs that changed" '[[ "$out" == *"- docs/rfc.md: sections changed: \"Decisions\", \"KYC form\"; removed sections: \"Notes (2)\"; IDs changed: AD-2; new IDs: AD-3; removed IDs: AD-1"* ]]'
 ok "then the IDs the track cites that changed or are gone" '[[ "$out" == *"cites IDs that changed: AD-2, AD-1 (removed). Check those lines against the docs."* ]]'
-ok "the doc report comes first, so the reload keeps it" '[[ "$(printf "%s\n" "$out" | head -1)" == "Source docs changed since STATE.md was last written."*"doc-expert"* ]]'
+ok "the doc report comes first, so the reload keeps it" '[[ "$(printf "%s\n" "$out" | head -1)" == "Source docs changed since STATE.md was last written."*"lookup skill"* ]]'
 ok "a doc that didn't change isn't listed" '[[ "$out" != *DECISIONS.md* ]]'
 out=$(bash "$H/scripts/audit.sh" "$D" pay/main start)
 ok "the check flags cited IDs no source doc mentions" '[[ "$out" == *"cites IDs no source doc mentions: AD-1, AD-9."* ]]'
 ok "but not IDs of a kind the docs don't define, such as ticket keys" '[[ "$out" != *CASH-12* && "$out" != *D-001* ]]'
 out=$(dh load '{"session_id":"d1","source":"resume"}')
-ok "a bound chat is told the source docs are the source of truth, and to ask doc-expert" '[[ "$out" == *"The source docs FEATURE.md lists are the source of truth: before you state, decide or change anything they cover, ask the doc-expert subagent"* && "$out" == *"cite what you use by ID"* ]]'
+ok "a bound chat is told the source docs are the source of truth, and to read them with the lookup" '[[ "$out" == *"The source docs FEATURE.md lists are the source of truth: before you state, decide or change anything they cover, read it with the trackside lookup skill"* && "$out" == *"cite what you use by ID"* ]]'
 ok "and the reload reports what changed in them" '[[ "$out" == *"- docs/rfc.md: sections changed:"* ]]'
 dsave; out=$(bash "$H/scripts/freshness.sh" "$D" pay/main)
 ok "after the next save, the docs count as unchanged again" '[[ "$out" == *"Source docs: no changes since"* ]]'
@@ -800,6 +800,39 @@ out=$(bash "$H/scripts/audit.sh" "$X" solo/one strat 2>&1; echo "exit=$?")
 ok "the check refuses an unknown mode instead of running as start" '[[ "$out" == *"Unknown mode: strat"* && "$out" == *"exit=1"* ]]'
 ok "skills run each command on its own, commits included" '! grep -q "add -A &&" "$H"/skills/*/SKILL.md'
 rm -rf "$X" "$Y"
+
+echo "--- looking up the source docs"
+LU=$(mktemp -d "${TMPDIR:-/tmp}/trackside-lookup.XXXXXX"); LK="$LU/.trackside"; mkdir -p "$LU/docs" "$LK/pay/main" "$LK/.state"
+printf '# Pay RFC\n\n## Decisions\n| ID | Date | Decision |\n| --- | --- | --- |\n| AD-1 | 2026-10-01 | One account per member |\n| AD-2 | 2026-10-02 | The form takes the full SSN; overrides 4.2 |\n\n## 4. KYC\nOne form.\n### 4.2 The form\nIt takes the last four of the SSN (see AD-2).\n```md\n## not a heading\n| AD-1 | in a code block |\n```\n## 5. Payouts\n### 5.1 Payout bank\nCollected at the first withdrawal.\n' > "$LU/docs/rfc.md"
+printf '# Feature: pay\n\n**Source docs:** `docs/rfc.md`\n' > "$LK/pay/FEATURE.md"
+state pay/main none none > "$LK/pay/main/STATE.md"
+lu() { bash "$H/scripts/doc-section.sh" "$LU" "$1" "$2"; }
+out=$(lu l1 AD-2)
+ok "an unbound chat is told there's nothing to look in" '[ "$out" = "This chat isn'"'"'t bound to a track, so there are no source docs to look in." ]'
+printf 'pay/main\n' > "$LK/.state/track-l1"
+out=$(lu l1 AD-2)
+ok "an ID prints its decision row with the table's header, citable by line" '[[ "$out" == *"== docs/rfc.md:7 · a row of the table at line 4"*"| ID | Date | Decision |"*"| AD-2 | 2026-10-02 | The form takes the full SSN; overrides 4.2 |"* ]]'
+ok "then the other lines that mention it, where an older section may disagree" '[[ "$out" == *"other lines that mention AD-2"*"It takes the last four of the SSN (see AD-2)."* ]]'
+out=$(lu l1 AD-1)
+ok "a row inside a code block isn't read as a decision, only listed as a mention" '[ "$(printf "%s\n" "$out" | grep -c "a row of the table")" = 1 ] && [[ "$out" == *"other lines that mention AD-1"*"15: | AD-1 | in a code block |"* ]]'
+out=$(lu l1 "payout bank")
+ok "heading words print that section, up to the next heading of its level or higher" '[[ "$out" == *"== docs/rfc.md:18-19 · 5.1 Payout bank"*"Collected at the first withdrawal."* ]]'
+out=$(lu l1 "KYC")
+ok "a section includes its subsections, and a ## line in a code block doesn't end it" '[[ "$out" == *"== docs/rfc.md:9-16 · 4. KYC"*"### 4.2 The form"*"## not a heading"* && "$out" != *"Payout bank"* ]]'
+out=$(lu l1 "first withdrawal")
+ok "words in no heading fall back to the lines that hold them" '[[ "$out" == *"other lines that contain it"*"19: Collected at the first withdrawal."* ]]'
+out=$(lu l1 "nothing like this")
+ok "and nothing matching says so" '[[ "$out" == "Nothing in the source docs matches"* ]]'
+ok "the lookup skill runs it pre-approved, and tells the chat to follow newer decisions" 'grep -q "Bash(bash \"\${CLAUDE_SKILL_DIR}/../../scripts/doc-section.sh\" \*)" "$H/skills/lookup/SKILL.md" && grep -q "Newer decisions override older sections" "$H/skills/lookup/SKILL.md"'
+rm -rf "$LU"
+
+echo "--- the handoff check"
+ok "the handoff check reads only, like a new chat" 'grep -qx "tools: Read, Grep, Glob" "$H/agents/handoff-check.md" && grep -q "remember nothing of the chat that saved it" "$H/agents/handoff-check.md" && grep -q "say the check is incomplete instead of answering" "$H/agents/handoff-check.md"'
+ok "save runs it with paths only, never the saving chat's own summary, and fixes what it found quietly" 'grep -q "ask the \`handoff-check\` subagent, passing it only the track'"'"'s full name and the paths" "$H/skills/save/SKILL.md" && grep -q "never a summary of your own" "$H/skills/save/SKILL.md" && grep -q "don'"'"'t mention the check otherwise" "$H/skills/save/SKILL.md"'
+printf 'shop/tickets\n' > "$st/track-hc"
+hook track '{"session_id":"hc","tool_name":"Agent","tool_input":{"subagent_type":"trackside:handoff-check"}}'
+ok "asking it isn't counted as research" '[ ! -f "$st/dirty-hc" ]'
+rm -f "$st"/*-hc
 
 echo "--- each rule has one home"
 while IFS=$'\t' read -r phrase home copies why; do

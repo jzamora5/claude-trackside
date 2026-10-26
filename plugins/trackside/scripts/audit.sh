@@ -100,7 +100,7 @@ checks() {
       | awk '(/^\|[ \t]*\**[A-Z]+-[0-9]+/ || /^#+[ \t]/) && match($0, /[A-Z]+-[0-9]+/) { s = substr($0, RSTART, RLENGTH); sub(/-.*/, "", s); print s }' | sort -u | tr '\n' ' ')
     gone=$(comm -23 <(ids_in "$state" "$context" | awk -v p=" $defined" '{ s = $0; sub(/-.*/, "", s); if (index(p, " " s " ")) print }') \
       <(printf '%s\n' "$docs" | while IFS= read -r p; do ids_in "$p"; done | sort -u) | head -10 | paste -sd ',' - | sed 's/,/, /g')
-    [ -n "$gone" ] && printf 'id-missing\tSTATE.md or CONTEXT.md cites IDs no source doc mentions: %s. Check each with the doc-expert subagent: fix the line if the docs renamed or removed it, or ask the user whether to record it in the docs if it is new.\n' "$gone"
+    [ -n "$gone" ] && printf 'id-missing\tSTATE.md or CONTEXT.md cites IDs no source doc mentions: %s. Check each with the trackside lookup skill: fix the line if the docs renamed or removed it, or ask the user whether to record it in the docs if it is new.\n' "$gone"
   fi
   now=$(date +%s)
   n=0

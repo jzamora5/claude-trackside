@@ -30,9 +30,9 @@ case "$(field .tool_name)" in
     [ -n "$(find "$tdir/STATE.md" -mmin -1 2>/dev/null)" ] || exit 0
     fp="$tdir/STATE.md" ;;
   Agent)
-    # trackside's doc-expert and auditor only read the feature's own files, so asking them isn't new research.
+    # trackside's auditor and handoff check only read the track's own files, so asking them isn't new research.
     case "$(field .tool_input.subagent_type)" in
-      trackside:doc-expert|doc-expert|trackside:auditor|auditor) ;;
+      trackside:auditor|auditor|trackside:handoff-check|handoff-check) ;;
       *) mark_dirty ;;
     esac
     exit 0 ;;

@@ -1,0 +1,4 @@
+schema_version: "1.1"
+name: doc-q-full-ssn
+context:
+  scaffold_script: scaffold.sh

@@ -34,7 +34,7 @@ A plugin installed from a local folder is read from that folder, so changes take
 | 10 | `/compact`, then `/compact` again | After the second one it asks for `/trackside:save` and a fresh chat |
 | 11 | `/trackside:save` | `STATE.md` is updated with `[verified]`/`[assumed]` marks and a concrete next step, and `.trackside` gets a commit |
 | 12 | `/trackside:digest demo` | `.trackside/demo/DIGEST.md` exists and starts with "Built from docs/spec.md" |
-| 13 | Ask "Can codes stack? Ask doc-expert." | It cites D-001 and the rejected option (stacking) |
+| 13 | Ask "Can codes stack?" | It looks it up with `/trackside:lookup`, and cites D-001 and the rejected option (stacking) |
 | 14 | In a second chat, `/trackside:start demo/research settle Q-1` | It binds `demo/research` and works on Q-1 without waiting; a new entry in `DECISIONS.md` with rejected options, and an Inbox line in `demo/tickets` if it affects tickets |
 | 15 | Reopen the first chat later (resume) | It's still bound to `demo/tickets` |
 | 16 | Fork a bound chat | Note which happens: the fork is told no track is bound, or it keeps the chat title and is rebound to the same track, which leaves two chats on one track |
@@ -51,7 +51,7 @@ A plugin installed from a local folder is read from that folder, so changes take
 | 27 | In a chat, `/trackside:start demo/tickets` on a track with an empty Next step | The agent fills in the Next step at its first save, or mentions it once, after answering |
 | 28 | `/trackside:audit demo/tickets` in the app | A short list comes back in the chat, each item marked lossless or needing you. The lossless ones are applied; the rest are saved in `review-<date>.md` with an Inbox line, and nothing else changes until you agree |
 | 29 | Start a chat on a track whose notes grew by 10 KB | It starts the deep review in the background and keeps working; when the list comes back, lossless items are applied, the rest land in `review-<date>.md` with an Inbox line, and a new chat on the track doesn't start another review |
-| 30 | In a chat bound to `demo/tickets`, save, then edit the Rules section of `docs/spec.md` and `/clear` | The reload names `docs/spec.md` and its Rules section as changed, and the agent checks it (with `doc-expert`) before relying on what `STATE.md` says |
+| 30 | In a chat bound to `demo/tickets`, save, then edit the Rules section of `docs/spec.md` and `/clear` | The reload names `docs/spec.md` and its Rules section as changed, and the agent reads it (with `/trackside:lookup`) before relying on what `STATE.md` says |
 | 31 | Say "I want a track for reviewing pull requests" | The proposal says each item starts clean; after your OK, the track's `CONTEXT.md` has `**Each item starts clean:** yes` and it has a `LESSONS.md`; `/trackside:list` and `/trackside:current` show it |
 | 32 | On that track, finish a review and state a lesson in the same message | The lesson lands in `LESSONS.md` with no question, the review's details leave `STATE.md`, and one Done-log line stays |
 | 33 | In a bound chat, ask for a small edit and to end by asking you something | The state is updated before the reply, the reply ends with the question, and nothing about saving or trackside shows up after it |

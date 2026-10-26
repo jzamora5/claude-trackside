@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.19.0 · 2026-10-26
+
+- `/trackside:save` checks the handoff the way a new chat would read it. A read-only `handoff-check` subagent that remembers nothing of the chat gets only the track's name and file paths, never the saving chat's summary. It reads what a new chat reads, says what's in flight, the next action, what's decided and what's waiting, and lists everything it had to guess. The saving chat fills those gaps quietly and tells the user only what it can't fill. The idea follows the Goldfish reviewers of google/elephant-goldfish-model: a chat that wrote the state assumes what it knows is obvious. In an eval with an undefined ticket input planted in the state, saves with the check raised it in 2 of 2 runs, and saves without it in 1 of 2, for about $0.07 more per save.
+- `doc-expert` is gone, folded into the main chat as `/trackside:lookup <ID or heading words>`. `scripts/doc-section.sh` prints the exact sections and decision rows that match, with their lines and the other lines that mention the ID, so a later decision that overrides one shows up. The chat reads and cites the source itself, rather than a summary. Following Anthropic's "When to fold subagents into your main agent loop", it was kept only after an eval: on three questions about a 150 KB RFC (one answered by a decision that overrides an older section), both answered all 6 runs correctly, at the same cost ($1.47) and about the same time (34.5 s with doc-expert, 33.2 s with the lookup). With doc-expert, the main chat often read the RFC itself as well.
+- Evals: `save-checks-handoff`, `continues-from-state` (a fresh chat picks up the right next step and avoids a recorded dead end) and three `doc-q-*` cases on a generated RFC.
+
 ## 0.18.0 · 2026-10-26
 
 - Nothing lands after a reply anymore. The Stop hook no longer sends a chat back to save once its reply is written; it notes that the save is owed. Your next message then starts with the request, so the save comes before that answer. A chat you `/clear` or close instead leaves a note on the track, and the next chat on it is told the last one ended with work `STATE.md` doesn't have yet.
