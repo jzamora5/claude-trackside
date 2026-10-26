@@ -286,7 +286,9 @@ echo "--- compaction and /clear"
 out=$(hook load '{"session_id":"s1","source":"compact"}')
 ok "the first compaction is counted" '[[ "$out" == *"compacted 1 time"* && "$out" == *"Read on start"* && "$out" != *"/trackside:save"* ]]'
 out=$(hook load '{"session_id":"s1","source":"compact"}')
-ok "the second asks for /trackside:save and a fresh chat" '[[ "$out" == *"compacted 2 time"* && "$out" == *"/trackside:save"* && "$out" == *"start a new chat with /trackside:start shop/tickets"* ]]'
+ok "the second is counted too, and the reload leaves the offer of a fresh chat to the next prompt" '[[ "$out" == *"compacted 2 time"* && "$out" != *"/trackside:save"* && "$out" != *"/trackside:fresh"* ]]'
+out=$(hook bind '{"session_id":"s1","prompt":"go on"}')
+ok "which offers it" '[[ "$out" == *"This chat has compacted 2 time(s). Offer once"* ]]'
 echo bogus > "$st/compactions-s1"
 out=$(hook load '{"session_id":"s1","source":"compact"}')
 ok "a corrupt counter restarts at 1" '[[ "$out" == *"compacted 1 time"* ]]'
@@ -398,6 +400,131 @@ ok "an archived track can't be bound" '[ -z "$out" ] && [ ! -f "$st/track-s7" ]'
 edit s1 Edit "$K/_archive/shop/research/STATE.md"
 ok "editing the archive doesn't mark the chat dirty" '[ ! -f "$st/dirty-s1" ]'
 
+echo "--- long chats: the offer of a fresh chat"
+# tx <file> <tokens> [model]: adds a reply sent with <tokens> of context; bnd <file> <trigger> <size>: a compaction.
+tx() { printf '{"type":"assistant","isSidechain":false,"message":{"model":"%s","content":[{"type":"text","text":"done"}],"usage":{"input_tokens":2,"cache_read_input_tokens":%s,"cache_creation_input_tokens":0}}}\n' "${3:-m-1}" "$(( $2 - 2 ))" >> "$1"; }
+bnd() { printf '{"type":"system","subtype":"compact_boundary","compactMetadata":{"trigger":"%s","preTokens":%s}}\n' "$2" "$3" >> "$1"; }
+lp() { hook bind "{\"session_id\":\"$1\",\"prompt\":\"next\",\"transcript_path\":\"$2\"}"; }
+ctx() { jq -r '.hookSpecificOutput.additionalContext // empty' <<<"$1"; }
+for c in l1 l2 l3 l4 l6; do printf 'shop/tickets\n' > "$st/track-$c"; done
+tx "$R/l1.jsonl" 300000
+out=$(lp l1 "$R/l1.jsonl")
+ok "a chat with nothing known about where it compacts isn't offered anything" '[ -z "$out" ]'
+bnd "$R/l1.jsonl" manual 500000; tx "$R/l1.jsonl" 30000; lp l1 "$R/l1.jsonl" >/dev/null
+ok "a compaction the user ran doesn't say where a model compacts" '[ ! -f "$st/limit-m-1" ]'
+bnd "$R/l1.jsonl" auto 970000; tx "$R/l1.jsonl" 30000
+out=$(lp l1 "$R/l1.jsonl")
+ok "an automatic one does, read from the transcript, per model" '[ "$(cat "$st/limit-m-1")" = 970000 ] && [ -z "$out" ]'
+bnd "$R/l1.jsonl" auto 300000; tx "$R/l1.jsonl" 30000; lp l1 "$R/l1.jsonl" >/dev/null
+ok "and a smaller one, such as an idle compaction, doesn't lower it" '[ "$(cat "$st/limit-m-1")" = 970000 ]'
+tx "$R/l1.jsonl" 870000
+out=$(lp l1 "$R/l1.jsonl")
+ok "below 90% of that size, still nothing" '[ -z "$out" ]'
+tx "$R/l1.jsonl" 880000
+out=$(ctx "$(lp l1 "$R/l1.jsonl")")
+ok "at 90% the chat is offered a fresh one, with the numbers" '[[ "$out" == "This chat'"'"'s context is about 880K tokens, 90% of the 970K at which it compacts. Offer once, in one line before the rest of your reply to this message, to continue in a fresh chat: /trackside:fresh saves the track"* ]]'
+ok "as a choice, with a way to keep the chat whole" '[[ "$out" == *"/trackside:whole keeps this chat as it is"* && "$out" == *"Run neither unless the user asks."* ]]'
+ok "the offers-fresh-chat eval gives its agent this same text" 'grep -qF -- "append_system_prompt: \"$out\"" "$H/evals/offers-fresh-chat/prompt.md"'
+out=$(lp l1 "$R/l1.jsonl")
+ok "only once" '[ -z "$out" ]'
+hook load '{"session_id":"l1","source":"compact"}' >/dev/null
+tx "$R/l1.jsonl" 900000
+out=$(ctx "$(lp l1 "$R/l1.jsonl")")
+ok "and again after the next compaction" '[[ "$out" == "This chat'"'"'s context is about 900K tokens, 92% of the 970K at which it compacts, and it has compacted 1 time(s). Offer once"* ]]'
+out=$(TRACKSIDE_OFFER_PERCENT=95 lp l2 "$R/l1.jsonl")
+ok "TRACKSIDE_OFFER_PERCENT moves the line" '[ -z "$out" ]'
+tx "$R/l2.jsonl" 190000
+out=$(ctx "$(CLAUDE_CODE_AUTO_COMPACT_WINDOW=200000 lp l2 "$R/l2.jsonl")")
+ok "a size set in CLAUDE_CODE_AUTO_COMPACT_WINDOW comes first" '[[ "$out" == "This chat'"'"'s context is about 190K tokens, 95% of the 200K at which it compacts. Offer once"* ]]'
+rm -f "$st/offered-l2"
+out=$(CLAUDE_CODE_AUTO_COMPACT_WINDOW=50000 lp l2 "$R/l2.jsonl")
+ok "unless it's a value Claude Code ignores" '[ -z "$out" ]'
+tx "$R/l3.jsonl" 40000 m-2; echo 2 > "$st/compactions-l3"
+out=$(ctx "$(lp l3 "$R/l3.jsonl")")
+ok "a chat on a model whose size isn't known yet is offered one after COMPACT_LIMIT compactions (default 2)" '[[ "$out" == "This chat'"'"'s context is about 40K tokens, and it has compacted 2 time(s). Offer once"* ]]'
+tx "$R/l4.jsonl" 950000
+bash "$H/scripts/whole.sh" "$R" l4 on >/dev/null
+out=$(lp l4 "$R/l4.jsonl")
+ok "a chat kept whole is never offered one" '[ -z "$out" ] && [ -f "$st/whole-l4" ]'
+bash "$H/scripts/whole.sh" "$R" l4 off >/dev/null
+out=$(ctx "$(lp l4 "$R/l4.jsonl")")
+ok "until that's undone" '[ ! -f "$st/whole-l4" ] && [[ "$out" == *"Offer once"* ]]'
+out=$(lp l5 "$R/l4.jsonl")
+ok "an unbound chat isn't offered one" '[ -z "$out" ]'
+touch "$st/owed-l6" "$st/dirty-l6"
+out=$(ctx "$(lp l6 "$R/l4.jsonl")")
+ok "an owed save and the offer come together, the save first" '[[ "$out" == "The last turn'"'"'s work isn'"'"'t in"*"Offer once"* ]]'
+out=$(CLAUDE_CODE_ENTRYPOINT=cli HOME="$R/nohome" bash "$H/scripts/whole.sh" "$R" l7 on)
+ok "keeping a chat whole says how long Claude Code keeps its transcript" '[[ "$out" == *"stays whole"* && "$out" == *"30 days unused (cleanupPeriodDays, the default)"* ]]'
+mkdir -p "$R/.claude"; printf '{"cleanupPeriodDays": 365}\n' > "$R/.claude/settings.json"
+out=$(CLAUDE_CODE_ENTRYPOINT=cli HOME="$R/nohome" bash "$H/scripts/whole.sh" "$R" l7 on)
+ok "from the settings that set it" '[[ "$out" == *"365 days unused (cleanupPeriodDays in your settings)"* ]]'
+out=$(CLAUDE_CODE_ENTRYPOINT=claude-desktop HOME="$R/nohome" bash "$H/scripts/whole.sh" "$R" l7 on)
+ok "and, for the desktop app, its own setting" '[[ "$out" == *"at any age, since desktopSessionCleanupPeriodDays isn'"'"'t set"* ]]'
+rm -f "$R/.claude/settings.json"
+out=$(bash "$H/scripts/whole.sh" "$R" l7 2>&1; echo "exit=$?")
+ok "the whole script wants on or off" '[[ "$out" == *"exit=1" ]]'
+touch "$st/judged-l1" "$st/health-l1"
+hook load '{"session_id":"l1","source":"clear"}' >/dev/null
+ok "clearing a chat resets its offer and its judge" '[ ! -f "$st/offered-l1" ] && [ ! -f "$st/judged-l1" ] && [ ! -f "$st/health-l1" ]'
+for f in limit-old whole-old offered-old; do echo 1 > "$st/$f"; touch -t "$(ago 40)" "$st/$f"; done
+hook load '{"session_id":"l1","source":"resume"}' >/dev/null
+ok "housekeeping keeps where models compact and which chats stay whole" '[ -f "$st/limit-old" ] && [ -f "$st/whole-old" ] && [ ! -f "$st/offered-old" ]'
+rm -f "${st:?}"/*-l[0-9] "${st:?}"/limit-* "${st:?}/whole-old"
+
+echo "--- the judge"
+J=$(mktemp -d "${TMPDIR:-/tmp}/trackside-judge.XXXXXX"); js="$J/.trackside/.state"
+mkdir -p "$js" "$J/.trackside/app/main" "$J/bin"
+printf '# Feature: app\n' > "$J/.trackside/app/FEATURE.md"
+printf '# State: app/main\n\n## Current\n- Decision: **discounts** round to the nearest cent, never to whole dollars.\n' > "$J/.trackside/app/main/STATE.md"
+printf 'app/main\n' > "$js/track-j1"
+# A stand-in for the claude CLI: it records how it was called and what it read, and answers with three findings, of
+# which only the first quotes both sides word for word, and a line in no known form.
+cat > "$J/bin/claude" <<'STUB'
+#!/usr/bin/env bash
+d="$(dirname "$0")"
+printf '%s\n' "$*" > "$d/args"; printf '%s\n' "${TRACKSIDE_CHILD:-}" > "$d/child"; cat > "$d/stdin"
+echo $(( $(cat "$d/runs" 2>/dev/null || echo 0) + 1 )) > "$d/runs"
+cat <<'OUT'
+1. We round discounts down to whole dollars ||| STATE.md ||| discounts round to the nearest cent, never to whole dollars ||| floor vs cents
+We always charge shipping on every order ||| STATE.md ||| discounts round to the nearest cent, never to whole dollars ||| never said
+We round discounts down to whole dollars ||| NOTES.md ||| discounts round to the nearest cent, never to whole dollars ||| not a file it read
+a line in no known form
+OUT
+STUB
+chmod +x "$J/bin/claude"
+{ jq -n -c '{type:"user",isSidechain:false,message:{role:"user",content:"Which rounding do we use?"}}'
+  jq -n -c '{type:"user",isSidechain:false,message:{role:"user",content:[{type:"tool_result",content:"TOOL OUTPUT"}]}}'
+  jq -n -c '{type:"user",isSidechain:false,message:{role:"user",content:"<task-notification> NOTICE </task-notification>"}}'
+  jq -n -c '{type:"assistant",isSidechain:false,message:{model:"m-1",content:[{type:"text",text:"We round discounts\ndown to whole dollars, so I floor it."}],usage:{input_tokens:2,cache_read_input_tokens:499998,cache_creation_input_tokens:0}}}'
+} > "$J/t.jsonl"
+jd() { printf '{"session_id":"j1","transcript_path":"%s","last_assistant_message":"Done, it floors now."}' "$J/t.jsonl" | PATH="$J/bin:$PATH" CLAUDE_PROJECT_DIR="$J" "$H/hooks/judge.sh"; }
+runs() { cat "$J/bin/runs" 2>/dev/null || echo 0; }
+jd
+ok "past 400K tokens the judge runs as its own Claude Code process, without tools, settings or a saved session" '[ "$(runs)" = 1 ] && [ "$(cat "$J/bin/child")" = 1 ] && [[ "$(cat "$J/bin/args")" == "-p --model haiku --tools  --strict-mcp-config --no-session-persistence --disable-slash-commands --setting-sources  --system-prompt-file $H/hooks/judge.md" ]]'
+ok "it reads the track's files and the chat's words, with the reply that just ended, and no tool output or notices" 'grep -q "^=== FILE STATE.md ===" "$J/bin/stdin" && grep -q "^USER: Which rounding" "$J/bin/stdin" && grep -q "^ASSISTANT: We round discounts" "$J/bin/stdin" && grep -q "^ASSISTANT: Done, it floors now." "$J/bin/stdin" && ! grep -q "TOOL OUTPUT" "$J/bin/stdin" && ! grep -q NOTICE "$J/bin/stdin"'
+ok "only a finding quoting the chat's replies and the file it names word for word is kept" '[ "$(grep -c "" "$js/health-j1")" = 1 ] && [ "$(cat "$js/health-j1")" = "- The chat said \"We round discounts down to whole dollars\"; STATE.md says \"discounts round to the nearest cent, never to whole dollars\" (floor vs cents)" ]'
+ok "its log counts what it found and keeps none of the chat's words" '[[ "$(cat "$js/judge-log")" == *"	app/main	m-1	500000	found 3	kept 1" ]] && ! grep -q round "$js/judge-log"'
+jd
+ok "it runs once until the chat compacts" '[ "$(runs)" = 1 ]'
+out=$(printf '{"session_id":"j1","prompt":"next","transcript_path":"%s"}' "$J/t.jsonl" | CLAUDE_PROJECT_DIR="$J" "$H/hooks/bind.sh" | jq -r .hookSpecificOutput.additionalContext)
+ok "the next prompt shows what it found, to settle before the answer" '[[ "$out" == "trackside'"'"'s context check compared"*"- The chat said \"We round discounts down to whole dollars\""*"Before you answer, settle each"* ]] && [ ! -f "$js/health-j1" ]'
+ok "and offers a fresh chat if a reply was wrong" '[[ "$out" == *"If one was, also offer once, in one line before the rest of your reply"* ]] && [ "$(cat "$js/offered-j1")" = 0 ]'
+echo 1 > "$js/compactions-j1"; jd
+ok "it runs again after a compaction" '[ "$(runs)" = 2 ]'
+rm -f "$js/judged-j1" "$js/offered-j1"
+TRACKSIDE_JUDGE_TOKENS=600000 jd
+ok "not below TRACKSIDE_JUDGE_TOKENS" '[ "$(runs)" = 2 ]'
+TRACKSIDE_JUDGE_TOKENS=0 jd
+ok "0 turns it off" '[ "$(runs)" = 2 ]'
+echo 540000 > "$js/limit-m-1"; jd; rm -f "$js/limit-m-1"
+ok "nor when the chat is due its offer anyway" '[ "$(runs)" = 2 ]'
+touch "$js/whole-j1"; jd; rm -f "$js/whole-j1"
+ok "nor in a chat kept whole" '[ "$(runs)" = 2 ]'
+out=$(printf '{"session_id":"g9","prompt":"/trackside:start app/main"}' | TRACKSIDE_CHILD=1 CLAUDE_PROJECT_DIR="$J" "$H/hooks/bind.sh"; echo "exit=$?")
+ok "inside the judge's own process trackside's hooks do nothing" '[ "$out" = "exit=0" ] && [ ! -f "$js/track-g9" ]'
+rm -rf "${J:?}"
+
 echo "--- bad input"
 for h in bind load track stop; do
   out=$(printf 'not json' | "$H/hooks/$h.sh"; echo "exit=$?")
@@ -452,6 +579,11 @@ wt stop "{\"session_id\":\"w\",\"stop_hook_active\":false,\"cwd\":\"$W/.claude/w
 ok "a worktree session isn't asked to save what it can't" '[ -f "$W/.trackside/.state/dirty-w" ] && [ ! -f "$W/.trackside/.state/owed-w" ]'
 wt stop '{"session_id":"w","stop_hook_active":false}' >/dev/null
 ok "the same chat state in the main checkout is asked" '[ -f "$W/.trackside/.state/owed-w" ]'
+echo 970000 > "$W/.trackside/.state/limit-m-1"; tx "$W/w.jsonl" 950000
+out=$(wt bind "{\"session_id\":\"w\",\"prompt\":\"next\",\"cwd\":\"$W/.claude/worktrees/w1\",\"transcript_path\":\"$W/w.jsonl\"}")
+ok "a worktree session isn't offered a fresh chat it couldn't save for" '[[ "$out" != *"Offer once"* ]]'
+out=$(wt bind "{\"session_id\":\"w\",\"prompt\":\"next\",\"transcript_path\":\"$W/w.jsonl\"}")
+ok "the same chat in the main checkout is" '[[ "$out" == *"Offer once"* ]]'
 rm -rf "$W"
 
 echo "--- a trackside folder inside the project's repo"

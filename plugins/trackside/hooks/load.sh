@@ -1,13 +1,12 @@
 #!/usr/bin/env bash
 # SessionStart (startup|resume|clear|compact|fork): reload the bound track's FEATURE.md and CONTEXT.md, with
 # trackside's instructions, and report what changed in the feature's repos since STATE.md was written; load-state.sh
-# reloads STATE.md beside it. An unbound chat gets the list of tracks instead. Compactions are counted, and after
-# COMPACT_LIMIT (default 2) the agent is asked to save and suggest a fresh chat.
+# reloads STATE.md beside it. An unbound chat gets the list of tracks instead. Compactions are counted for the prompt
+# hook, which offers a fresh chat when one is due.
 . "$(dirname "$0")/lib.sh"
 here="$(dirname "$0")"
 src=$(field .source)
 title=$(field .session_title)
-limit="${COMPACT_LIMIT:-2}"
 
 budget=$reload_budget
 out=""
@@ -22,12 +21,12 @@ if [ -n "$title" ] && ! keep_title "$title"; then
 else
   rm -f "$st/name-$sid"
 fi
-[ "$src" = "clear" ] && rm -f "$st/compactions-$sid"
+[ "$src" = "clear" ] && rm -f "$st/compactions-$sid" "$st/offered-$sid" "$st/judged-$sid" "$st/health-$sid"
 
 # Housekeeping: runtime files of old sessions only pile up, and a resumed chat rebinds from its title. Stamps, the
-# deep-review records and the tracks remembered for chats the user named are kept: they matter most after a long
-# pause, and closing a track removes its own.
-find "$st" -type f ! -name .gitignore ! -name 'stamp-*' ! -name 'deep-*' ! -name 'named-*' -mtime +"${TRACKSIDE_STATE_DAYS:-30}" -exec rm -f {} + 2>/dev/null
+# deep-review records, the tracks remembered for chats the user named, chats kept whole and where each model compacts
+# are kept: they matter most after a long pause, and closing a track removes its own.
+find "$st" -type f ! -name .gitignore ! -name 'stamp-*' ! -name 'deep-*' ! -name 'named-*' ! -name 'whole-*' ! -name 'limit-*' -mtime +"${TRACKSIDE_STATE_DAYS:-30}" -exec rm -f {} + 2>/dev/null
 [ -n "$binding" ] && printf '%s\n' "$binding" > "$st/track-$sid"
 bash "$here/../scripts/index.sh" "$root" 2>/dev/null
 
@@ -74,9 +73,6 @@ if [ "$src" = "compact" ]; then
   echo "$n" > "$st/compactions-$sid"
   add "This chat has been compacted $n time(s); the track's files reloaded with this are authoritative over the summary."
   add "Re-read the files FEATURE.md and CONTEXT.md list under \"Read on start\"; the summary may have dropped them."
-  if [ "$n" -ge "$limit" ]; then
-    add "After $limit compactions: finish the current small step, run /trackside:save, then tell the user to /clear, or to start a new chat with /trackside:start $binding."
-  fi
 fi
 
 add ""

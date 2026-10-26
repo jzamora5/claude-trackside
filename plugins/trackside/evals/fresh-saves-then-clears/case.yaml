@@ -1,0 +1,4 @@
+schema_version: "1.1"
+name: fresh-saves-then-clears
+context:
+  scaffold_script: scaffold.sh

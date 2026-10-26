@@ -56,5 +56,9 @@ A plugin installed from a local folder is read from that folder, so changes take
 | 32 | On that track, finish a review and state a lesson in the same message | The lesson lands in `LESSONS.md` with no question, the review's details leave `STATE.md`, and one Done-log line stays |
 | 33 | In a bound chat, ask for a small edit and to end by asking you something | The state is updated before the reply, the reply ends with the question, and nothing about saving or trackside shows up after it |
 | 34 | In a track whose Done log names a pull request as `<repo>#<number>` that has since merged, `/trackside:next` | The line gets "(merged <date>)" without a word about it in the reply, and the proposal treats that ticket as shipped |
+| 35 | In the desktop app, a chat bound to `demo/tickets`: make an edit, then `/trackside:fresh` | It saves, the app asks you to approve clearing the chat, and after the reply the chat is empty, still named `demo/tickets`; your next message continues from the Next step |
+| 36 | The same in the terminal | It saves and tells you to type `/clear`; after `/clear` the chat is on `demo/tickets` again |
+| 37 | In a bound chat, `/trackside:whole`, then `/trackside:whole off` | It says the chat stays whole, where its transcript is and how long Claude Code keeps it, and then that the offers come back. No permission prompt for either |
+| 38 | In a bound chat, `export TRACKSIDE_JUDGE_TOKENS=1` before starting Claude Code, then plant a reply that contradicts `STATE.md` and end the turn; send another message | Within a few seconds `.state/judge-log` has a line, and the next message brings the disagreement and, if the reply was wrong, the offer of a fresh chat. Repeat in the desktop app, where the judge must find the `claude` command too |
 
 Write down anything that differs, with the exact output.

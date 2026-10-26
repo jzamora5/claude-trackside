@@ -1,7 +1,8 @@
 # Shared setup for the trackside hooks. Sourced, not run.
 # Every hook fails open: without jq, a trackside folder or a session id, it exits 0 and changes nothing,
-# so trackside never breaks a session.
+# so trackside never breaks a session. The Claude Code process the judge starts (hooks/judge.sh) runs none of them.
 set -uo pipefail
+[ -z "${TRACKSIDE_CHILD:-}" ] || exit 0
 command -v jq >/dev/null 2>&1 || exit 0
 . "$(dirname "${BASH_SOURCE[0]}")/../scripts/common.sh"
 

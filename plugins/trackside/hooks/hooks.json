@@ -52,6 +52,13 @@
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/stop.sh",
             "args": [],
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/judge.sh",
+            "args": [],
+            "async": true,
+            "timeout": 120
           }
         ]
       }

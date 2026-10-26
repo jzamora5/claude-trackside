@@ -109,6 +109,54 @@ save_due() {
   [ "$mins" = 0 ] || [ ! -f "$1/saved-$2" ] || [ -n "$(find "$1/saved-$2" -mmin +"$mins" 2>/dev/null)" ]
 }
 
+compactions() { local c; c=$(cat "$1/compactions-$2" 2>/dev/null); [[ "$c" =~ ^[0-9]+$ ]] && echo "$c" || echo 0; }
+
+# context_usage <transcript>: "<tokens> <model> <compaction size>" for the main chat, read from the end of its
+# transcript: the context its last reply was sent with, its model, and the size at which it last compacted on its own
+# (0 when that isn't in the last 3 MB). Prints nothing when no reply is.
+context_usage() {
+  [ -f "$1" ] || return 0
+  tail -c 3000000 "$1" 2>/dev/null | grep -E '"type":"assistant"|"subtype":"compact_boundary"' |
+    jq -R -s -r '[split("\n")[] | fromjson? | select(.isSidechain != true)] as $l
+      | ([$l[] | select(.type == "assistant" and .message.usage != null and .message.model != "<synthetic>")] | last) as $a
+      | ([$l[] | select(.subtype == "compact_boundary" and .compactMetadata.trigger == "auto")] | last) as $b
+      | if $a == null then empty else
+          "\([$a.message.usage | .input_tokens, .cache_read_input_tokens, .cache_creation_input_tokens | numbers] | add // 0) \($a.message.model | gsub("[^A-Za-z0-9._-]"; "_")) \($b.compactMetadata.preTokens // 0)"
+        end' 2>/dev/null
+}
+
+# compact_point <state dir> <model>: the context size at which this model's chats compact on their own:
+# CLAUDE_CODE_AUTO_COMPACT_WINDOW when it holds a value Claude Code accepts, else the largest size trackside has seen
+# one compact at, since an idle compaction can run well below it. Prints nothing until then.
+compact_point() {
+  local w="${CLAUDE_CODE_AUTO_COMPACT_WINDOW:-}"
+  if [[ "$w" =~ ^[0-9]+$ ]] && [ "$w" -ge 100000 ]; then echo "$w"; return; fi
+  cat "$1/limit-$2" 2>/dev/null || true
+}
+
+# size_due <state dir> <session id> <tokens> <model>: true once the chat has compacted COMPACT_LIMIT times (default 2),
+# or its context has reached TRACKSIDE_OFFER_PERCENT (default 90) of where its model compacts.
+size_due() {
+  local lim="${COMPACT_LIMIT:-2}" pct="${TRACKSIDE_OFFER_PERCENT:-90}" cp
+  [[ "$lim" =~ ^[0-9]+$ ]] || lim=2
+  [[ "$pct" =~ ^[0-9]+$ ]] || pct=90
+  [ "$(compactions "$1" "$2")" -ge "$lim" ] && return 0
+  cp=$(compact_point "$1" "$4")
+  [[ "$cp" =~ ^[0-9]+$ ]] && [[ "$3" =~ ^[0-9]+$ ]] && [ $(( $3 * 100 )) -ge $(( cp * pct )) ]
+}
+
+# chat_messages <transcript>: the main chat's last 20 messages, one JSON object each, {r: USER or ASSISTANT, x: its
+# text, cut at 1500 characters}, without tool calls, tool output, summaries, background-task notices or context hooks
+# added.
+chat_messages() {
+  tail -c 3000000 "$1" 2>/dev/null | jq -R -c 'fromjson?
+    | select((.type == "user" or .type == "assistant") and .isSidechain != true and .isMeta != true and .isCompactSummary != true)
+    | {r: (if .type == "user" then "USER" else "ASSISTANT" end),
+       x: (.message.content | if type == "string" then . else ([.[]? | select(.type == "text") | .text] | join("\n")) end)}
+    | select(.x != "" and (.x | test("^<(task-notification|local-command-)") | not)) | .x |= .[0:1500]' 2>/dev/null |
+    tail -n 20
+}
+
 # sections <file>: one line per "## " heading outside code fences: its name, its line and the last line of its
 # section, tab-separated; a heading with no name is named "-", so no field is ever empty.
 sections() {
