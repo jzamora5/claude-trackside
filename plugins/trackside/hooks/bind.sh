@@ -27,15 +27,22 @@ if [[ "$prompt" =~ ^/(trackside:)?start[[:space:]]+([^[:space:]]+)([[:space:]]|$
     [ -z "$name" ] || map_name "$keep" "$name" "$target"
   fi
 fi
-# trackside never renames a chat the user named.
-if [ -n "$name" ]; then
-  rm -f "$st/title-$sid"
-  exit 0
+# A save the last turn ended without is asked for before this answer, never after the last one.
+owed=""
+b=$(cat "$st/track-$sid" 2>/dev/null || true)
+if [ -n "$b" ] && [ -f "$st/owed-$sid" ] && [ -f "$st/dirty-$sid" ] && [ -z "$worktree" ]; then
+  owed="The last turn's work isn't in $(rel "$keep/$b")/STATE.md yet. Before you answer this message, update its Current and Next step, a line each, marked [verified] or [assumed], and record any decision made since where FEATURE.md says decisions go, without mentioning it in your reply."
+  touch "$st/nudged-$sid"
 fi
-# Only this hook and SessionStart can name a chat, so scripts/bind.sh leaves the name here for the next prompt.
-[ -z "$title" ] && [ -s "$st/title-$sid" ] && title=$(cat "$st/title-$sid")
-[ -n "$title" ] || exit 0
-
+# trackside never renames a chat the user named. Only this hook and SessionStart can name a chat, so scripts/bind.sh
+# leaves the name here for the next prompt.
+if [ -n "$name" ]; then
+  title=""
+elif [ -z "$title" ] && [ -s "$st/title-$sid" ]; then
+  title=$(cat "$st/title-$sid")
+fi
 rm -f "$st/title-$sid"
-jq -n --arg t "$title" '{hookSpecificOutput: {hookEventName: "UserPromptSubmit", sessionTitle: $t}}'
+[ -n "$title$owed" ] || exit 0
+jq -n --arg t "$title" --arg c "$owed" \
+  '{hookSpecificOutput: ({hookEventName: "UserPromptSubmit"} + (if $t != "" then {sessionTitle: $t} else {} end) + (if $c != "" then {additionalContext: $c} else {} end))}'
 exit 0

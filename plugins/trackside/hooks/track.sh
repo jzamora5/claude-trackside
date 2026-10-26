@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# PostToolUse (Edit|Write|NotebookEdit|WebFetch|WebSearch|Agent): edits to project files and research mark
+# PostToolUse (Edit|Write|NotebookEdit|WebFetch|WebSearch|Agent|Bash): edits to project files and research mark
 # the chat "dirty". Editing the bound track's STATE.md clears that and stamps each of the feature's repos
 # with its current commit, and its source docs with their sections and IDs, so the next chat can see what
 # changed since.
@@ -17,8 +17,18 @@ mark_dirty() {
   jq -n --arg p "$(rel "$tdir")/STATE.md" '{hookSpecificOutput: {hookEventName: "PostToolUse", additionalContext: ("Before you write your reply to the user, update " + $p + ": its Current and Next step, a line each, marked [verified] or [assumed], and any decision made since, where FEATURE.md says decisions go. Do it quietly, without mentioning it in your reply.")}}'
 }
 
+fp=""
 case "$(field .tool_name)" in
   WebFetch|WebSearch) mark_dirty; exit 0 ;;
+  Bash)
+    # A save through the shell, such as sed on STATE.md, counts like an Edit: the command names the bound track's
+    # STATE.md, by its track path or from the track's folder, and the file changed in the last minute. Other shell
+    # commands still don't count as work.
+    cmd=$(field .tool_input.command)
+    case "$cmd" in *STATE.md*) ;; *) exit 0 ;; esac
+    [[ "$cmd" == *"$binding"* ]] || [ "$(field .cwd)" = "$tdir" ] || exit 0
+    [ -n "$(find "$tdir/STATE.md" -mmin -1 2>/dev/null)" ] || exit 0
+    fp="$tdir/STATE.md" ;;
   Agent)
     # trackside's doc-expert and auditor only read the feature's own files, so asking them isn't new research.
     case "$(field .tool_input.subagent_type)" in
@@ -63,10 +73,10 @@ write_doc_stamp() {
   if [ -s "$tmp" ]; then mv "$tmp" "$out"; else rm -f "$tmp" "$out"; fi
 }
 
-fp=$(field '.tool_input.file_path // .tool_input.notebook_path')
+[ -n "$fp" ] || fp=$(field '.tool_input.file_path // .tool_input.notebook_path')
 case "$fp" in
   "$tdir/STATE.md")
-    rm -f "$st/dirty-$sid" "$st/nudged-$sid"
+    rm -f "$st/dirty-$sid" "$st/nudged-$sid" "$st/owed-$sid" "$(stamp_file "$keep" "$binding").unsaved"
     touch "$st/saved-$sid"
     write_stamp
     write_doc_stamp

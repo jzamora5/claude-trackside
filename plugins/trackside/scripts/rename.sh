@@ -90,6 +90,7 @@ if [ -n "$track" ]; then
   s=$(stamp_file "$keep" "$old")
   [ -f "$s" ] && mv "$s" "$(stamp_file "$keep" "$to")"
   [ -f "$s.docs" ] && mv "$s.docs" "$(stamp_file "$keep" "$to").docs"
+  [ -f "$s.unsaved" ] && mv "$s.unsaved" "$(stamp_file "$keep" "$to").unsaved"
   [ -f "$st/deep-$feature@$track" ] && mv "$st/deep-$feature@$track" "$st/deep-$feature@$new"
 else
   for s in "$st/stamp-$old@"* "$st/deep-$old@"*; do

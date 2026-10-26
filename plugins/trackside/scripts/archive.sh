@@ -48,7 +48,7 @@ for b in "$st"/track-*; do
   if [ -n "$track" ]; then [ "$v" = "$feature/$track" ] && match=1; else [[ "$v" == "$feature"/* ]] && match=1; fi
   if [ "$match" = 1 ]; then
     sid="${b##*/track-}"
-    rm -f "$b" "$st/dirty-$sid" "$st/compactions-$sid" "$st/nudged-$sid"
+    rm -f "$b" "$st/dirty-$sid" "$st/compactions-$sid" "$st/nudged-$sid" "$st/owed-$sid"
     unbound=$((unbound + 1))
   fi
 done
@@ -58,7 +58,7 @@ for m in "$st"/named-*; do
   v=$(cat "$m")
   if [ -n "$track" ]; then [ "$v" = "$feature/$track" ] && rm -f "$m"; else [[ "$v" == "$feature"/* ]] && rm -f "$m"; fi
 done
-if [ -n "$track" ]; then s=$(stamp_file "$keep" "$feature/$track"); rm -f "$s" "$s.docs"; else rm -f "$st/stamp-$feature@"*; fi
+if [ -n "$track" ]; then s=$(stamp_file "$keep" "$feature/$track"); rm -f "$s" "$s.docs" "$s.unsaved"; else rm -f "$st/stamp-$feature@"*; fi
 
 bash "$(dirname "$0")/index.sh" "$root"
 echo "To restore it, move it back out of $(rel "$keep/_archive")/."

@@ -174,7 +174,9 @@ echo "--- tracking and the Stop gate"
 edit() { hook track "{\"session_id\":\"$1\",\"tool_name\":\"$2\",\"tool_input\":{\"file_path\":\"$3\"}}" >/dev/null; }
 edit_out() { hook track "{\"session_id\":\"$1\",\"tool_name\":\"$2\",\"tool_input\":{\"file_path\":\"$3\"}}"; }
 stop() { hook stop "{\"session_id\":\"$1\",\"stop_hook_active\":$2}"; }
-out=$(stop s1 false);                                  ok "stop passes while clean" '[ -z "$out" ]'
+# owed <session>: whether the Stop hook, which prints nothing, noted that the turn ended owing a save.
+owed() { rm -f "$st/owed-$1"; [ -z "$(stop "$1" "${2:-false}")" ] && [ -f "$st/owed-$1" ]; }
+ok "stop passes while clean" '! owed s1'
 edit s1 Edit "$K/shop/FEATURE.md";                     ok "editing trackside files stays clean" '[ ! -f "$st/dirty-s1" ]'
 edit s1 Edit "$K/shop/research/STATE.md";              ok "editing another track's state stays clean" '[ ! -f "$st/dirty-s1" ]'
 edit s1 Edit "$R/.claude/settings.json";               ok "editing the project's .claude stays clean" '[ ! -f "$st/dirty-s1" ]'
@@ -184,23 +186,30 @@ edit s1 Write "/tmp/trackside-elsewhere/scratch-note.md";   ok "an edit outside 
 edit s1 Edit "$R/.claude/worktrees/w1/api/cart.js";    ok "an edit in a Claude Code worktree marks the chat dirty" '[ -f "$st/dirty-s1" ]'; rm -f "$st/dirty-s1"
 edit s1 Edit "$R/api/.claude/notes.md";                ok "a repo's own .claude folder counts as project files" '[ -f "$st/dirty-s1" ]'; rm -f "$st/dirty-s1"
 edit s1 Edit "$R/api/cart.js";                         ok "a project edit marks the chat dirty" '[ -f "$st/dirty-s1" ]'
-out=$(stop s1 false);                                  ok "a chat that hasn't saved yet is asked at its first working turn" '[ -n "$out" ]'
+ok "a chat that hasn't saved yet owes a save after its first working turn" 'owed s1'
 edit s1 Edit "$K/shop/tickets/STATE.md"; edit s1 Edit "$R/api/cart.js"
 ok "(setup) saving starts this chat's own clock" '[ -f "$st/saved-s1" ] && [ -f "$st/dirty-s1" ]'
-out=$(stop s1 false);                                  ok "stop waits while this chat saved in the last 15 minutes" '[ -z "$out" ] && [ -f "$st/dirty-s1" ]'
-out=$(TRACKSIDE_SAVE_MINUTES=0 stop s1 false);              ok "TRACKSIDE_SAVE_MINUTES=0 asks after every working turn" '[ -n "$out" ]'
+ok "it waits while this chat saved in the last 15 minutes" '! owed s1 && [ -f "$st/dirty-s1" ]'
+ok "TRACKSIDE_SAVE_MINUTES=0 asks after every working turn" 'TRACKSIDE_SAVE_MINUTES=0 owed s1'
 mins_ago() { date -v-"$1"M +%Y%m%d%H%M 2>/dev/null || date -d "$1 minutes ago" +%Y%m%d%H%M; }
 touch -t "$(mins_ago 20)" "$st/saved-s1"
-out=$(TRACKSIDE_SAVE_MINUTES=30 stop s1 false);             ok "TRACKSIDE_SAVE_MINUTES moves the wait" '[ -z "$out" ]'
+ok "TRACKSIDE_SAVE_MINUTES moves the wait" '! TRACKSIDE_SAVE_MINUTES=30 owed s1'
 hook bind '{"session_id":"s10","prompt":"/trackside:start shop/tickets"}' >/dev/null; edit s10 Edit "$K/shop/tickets/STATE.md"
-out=$(stop s1 false)
-ok "another chat saving the same track doesn't silence this one" '[ -n "$out" ]'; rm -f "$st/track-s10" "$st/saved-s10"
-ok "stop sends Stop hook feedback naming the state file" '[ "$(jq -r .hookSpecificOutput.hookEventName <<<"$out")" = Stop ] && [[ "$(jq -r .hookSpecificOutput.additionalContext <<<"$out")" == *".trackside/shop/tickets/STATE.md"* ]] && [ "$(jq -r ".decision // empty" <<<"$out")" = "" ]'
-ok "and asks for Current, Next step and new decisions, nothing more" '[[ "$(jq -r .hookSpecificOutput.additionalContext <<<"$out")" == *"Update its Current and Next step"* && "$(jq -r .hookSpecificOutput.additionalContext <<<"$out")" == *"Record any decision made since"* && "$(jq -r .hookSpecificOutput.additionalContext <<<"$out")" != *"Done log"* ]]'
-out=$(TRACKSIDE_SAVE_MINUTES=soon stop s1 false);           ok "a bad TRACKSIDE_SAVE_MINUTES falls back to 15" '[ -n "$out" ]'
-out=$(stop s1 true);                                   ok "stop_hook_active lets it stop" '[ -z "$out" ]'
-edit s1 Edit "$K/shop/tickets/STATE.md";               ok "updating the track's state clears it" '[ ! -f "$st/dirty-s1" ]'
-out=$(stop s1 false);                                  ok "stop passes after the update" '[ -z "$out" ]'
+ok "another chat saving the same track doesn't silence this one" 'owed s1'; rm -f "$st/track-s10" "$st/saved-s10"
+ok "the Stop hook adds nothing after the reply" '[ -z "$(stop s1 false)" ] && [ -s "$st/stamp-shop@tickets.unsaved" ]'
+out=$(hook load '{"session_id":"n7","source":"clear","session_title":"shop/tickets"}'); rm -f "$st"/*-n7
+ok "a new chat on that track is told the last one ended with work STATE.md doesn't have" '[[ "$out" == *"The last chat on this track ended on "*" with work STATE.md doesn'"'"'t have yet. Before your first reply, update its Current and Next step"* ]]'
+printf 'shop/tickets' > "$st/title-s1"
+both=$(hook bind '{"session_id":"s1","prompt":"what about the totals?"}')
+ok "one prompt can carry the chat's new name and the reminder" '[ "$(jq -r .hookSpecificOutput.sessionTitle <<<"$both")" = shop/tickets ] && [[ "$(jq -r .hookSpecificOutput.additionalContext <<<"$both")" == *"Before you answer this message"* ]]'
+out=$(hook bind '{"session_id":"s1","prompt":"what about the totals?"}')
+ok "the next message asks for the save before its answer, naming the state file" '[ "$(jq -r .hookSpecificOutput.hookEventName <<<"$out")" = UserPromptSubmit ] && [[ "$(jq -r .hookSpecificOutput.additionalContext <<<"$out")" == *".trackside/shop/tickets/STATE.md"* ]] && [ "$(jq -r ".decision // empty" <<<"$out")" = "" ]'
+ok "and asks for Current, Next step and new decisions, nothing more" '[[ "$(jq -r .hookSpecificOutput.additionalContext <<<"$out")" == *"Before you answer this message, update its Current and Next step"* && "$(jq -r .hookSpecificOutput.additionalContext <<<"$out")" == *"record any decision made since"* && "$(jq -r .hookSpecificOutput.additionalContext <<<"$out")" != *"Done log"* ]]'
+ok "a bad TRACKSIDE_SAVE_MINUTES falls back to 15" 'TRACKSIDE_SAVE_MINUTES=soon owed s1'
+ok "stop_hook_active lets it stop" '! owed s1 true'
+touch "$st/owed-s1"
+edit s1 Edit "$K/shop/tickets/STATE.md";               ok "updating the track's state clears it, and the save it owed" '[ ! -f "$st/dirty-s1" ] && [ ! -f "$st/owed-s1" ] && [ ! -f "$st/stamp-shop@tickets.unsaved" ]'
+ok "stop passes after the update" '! owed s1'
 stamp="$st/stamp-shop@tickets"
 ok "the update stamps both repos, in .state" '[ "$(cut -f1 "$stamp" | tr "\n" " ")" = "api web " ] && [ "$(cut -f2 "$stamp" | head -1)" = "$(git -C "$R/api" rev-parse HEAD)" ] && [ ! -e "$K/shop/tickets/.stamp" ]'
 for t in WebFetch WebSearch; do
@@ -216,7 +225,23 @@ ok "nor does the unprefixed name" '[ ! -f "$st/dirty-s1" ]'
 hook track '{"session_id":"s1","tool_name":"Agent","tool_input":{"subagent_type":"my-team:doc-expert"}}'
 ok "another plugin's doc-expert still counts" '[ -f "$st/dirty-s1" ]'; rm -f "$st/dirty-s1"
 m=$(jq -r '.hooks.PostToolUse[0].matcher' "$H/hooks/hooks.json")
-ok "the matcher passes edits and research, not Read or Bash" '[[ "Edit" =~ ^($m)$ && "Agent" =~ ^($m)$ && ! "Read" =~ ^($m)$ && ! "Bash" =~ ^($m)$ ]]'
+ok "the matcher passes edits, research and Bash, not Read" '[[ "Edit" =~ ^($m)$ && "Agent" =~ ^($m)$ && "Bash" =~ ^($m)$ && ! "Read" =~ ^($m)$ ]]'
+printf 'shop/tickets\n' > "$st/track-sb"
+hook track "{\"session_id\":\"sb\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"sed -i '' s/a/b/ api/cart.js\"}}"
+ok "a shell command that doesn't touch STATE.md still doesn't count as work" '[ ! -f "$st/dirty-sb" ] && [ ! -f "$st/saved-sb" ]'
+touch "$st/dirty-sb" "$st/owed-sb" "$st/nudged-sb"; touch -t "$(date -v-5M +%Y%m%d%H%M 2>/dev/null || date -d '5 minutes ago' +%Y%m%d%H%M)" "$K/shop/tickets/STATE.md"
+hook track "{\"session_id\":\"sb\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"wc -c $K/shop/tickets/STATE.md\"}}" >/dev/null
+ok "a command that only reads STATE.md isn't a save" '[ -f "$st/dirty-sb" ] && [ ! -f "$st/saved-sb" ]'
+touch "$K/shop/tickets/STATE.md"
+hook track "{\"session_id\":\"sb\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"cd $K/shop/tickets && sed -i '' s/x/y/ STATE.md\"}}" >/dev/null
+ok "a save through the shell counts like an Edit, owed save and reminder included" '[ -f "$st/saved-sb" ] && [ ! -f "$st/dirty-sb" ] && [ ! -f "$st/owed-sb" ] && [ ! -f "$st/nudged-sb" ]'
+touch "$st/dirty-sb"; rm -f "$st/saved-sb"
+hook track "{\"session_id\":\"sb\",\"tool_name\":\"Bash\",\"cwd\":\"$K/shop/tickets\",\"tool_input\":{\"command\":\"sed -i '' s/x/y/ STATE.md\"}}" >/dev/null
+ok "so does one run from the track's folder by name only" '[ -f "$st/saved-sb" ] && [ ! -f "$st/dirty-sb" ]'
+touch "$st/dirty-sb"; rm -f "$st/saved-sb"
+hook track "{\"session_id\":\"sb\",\"tool_name\":\"Bash\",\"cwd\":\"$R\",\"tool_input\":{\"command\":\"sed -i '' s/x/y/ other/STATE.md\"}}" >/dev/null
+ok "but not another track's STATE.md from elsewhere" '[ ! -f "$st/saved-sb" ] && [ -f "$st/dirty-sb" ]'
+rm -f "$st"/*-sb
 edit s9 Edit "$R/api/cart.js";                         ok "an unbound chat is never tracked" '[ ! -f "$st/dirty-s9" ]'
 out=$(stop s9 false);                                  ok "an unbound chat is never blocked" '[ -z "$out" ]'
 
@@ -251,8 +276,8 @@ out=$(edit_out v1 Edit "$R/api/cart.js")
 ok "after a save, not again until a save is due" '[ -z "$out" ] && [ -f "$st/dirty-v1" ]'
 out=$(TRACKSIDE_SAVE_MINUTES=0 hook track '{"session_id":"v1","tool_name":"WebFetch","tool_input":{}}')
 ok "once a save is due it asks again, after research too" '[[ "$out" == *"Before you write your reply to the user"* ]]'
-out=$(TRACKSIDE_SAVE_MINUTES=0 hook stop '{"session_id":"v1","stop_hook_active":false}')
-ok "the Stop hook catches a chat that didn't save, and asks for a quiet save that keeps the user's question last" '[[ "$out" == *"your reply is already written"* && "$out" == *"without writing anything about it to the user"* && "$out" == *"with that question again in one line, so it stays the last thing they see"* ]]'
+out=$(TRACKSIDE_SAVE_MINUTES=0 hook stop '{"session_id":"v1","stop_hook_active":false}'); out=$(hook bind '{"session_id":"v1","prompt":"and the next thing?"}')
+ok "a chat that didn't save before replying is asked at its next message, before that answer, quietly" '[[ "$out" == *"Before you answer this message"* && "$out" == *"without mentioning it in your reply"* ]]'
 out=$(hook load '{"session_id":"s1","source":"resume"}')
 ok "a bound chat is told to keep the bookkeeping out of its replies" '[[ "$out" == *"update STATE.md before you write a reply, not after it, and don'"'"'t tell the user about saves"* ]]'
 rm -f "$st"/*-v1
@@ -423,10 +448,10 @@ out=$(wt load '{"session_id":"w","source":"resume"}')
 ok "a main-checkout chat isn't told that" '[[ "$out" != *"can read the track"* ]]'
 wt track "{\"session_id\":\"w\",\"cwd\":\"$W/.claude/worktrees/w1\",\"tool_name\":\"Edit\",\"tool_input\":{\"file_path\":\"$W/.claude/worktrees/w1/app.js\"}}"
 touch -t "$(mins_ago 20)" "$W/.trackside/.state/saved-w"
-out=$(wt stop "{\"session_id\":\"w\",\"stop_hook_active\":false,\"cwd\":\"$W/.claude/worktrees/w1\"}")
-ok "a worktree session isn't asked to save what it can't" '[ -f "$W/.trackside/.state/dirty-w" ] && [ -z "$out" ]'
-out=$(wt stop '{"session_id":"w","stop_hook_active":false}')
-ok "the same chat state in the main checkout is asked" '[ -n "$out" ]'
+wt stop "{\"session_id\":\"w\",\"stop_hook_active\":false,\"cwd\":\"$W/.claude/worktrees/w1\"}" >/dev/null
+ok "a worktree session isn't asked to save what it can't" '[ -f "$W/.trackside/.state/dirty-w" ] && [ ! -f "$W/.trackside/.state/owed-w" ]'
+wt stop '{"session_id":"w","stop_hook_active":false}' >/dev/null
+ok "the same chat state in the main checkout is asked" '[ -f "$W/.trackside/.state/owed-w" ]'
 rm -rf "$W"
 
 echo "--- a trackside folder inside the project's repo"

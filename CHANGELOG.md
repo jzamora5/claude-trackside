@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.18.0 · 2026-10-26
+
+- Nothing lands after a reply anymore. The Stop hook no longer sends a chat back to save once its reply is written; it notes that the save is owed. Your next message then starts with the request, so the save comes before that answer. A chat you `/clear` or close instead leaves a note on the track, and the next chat on it is told the last one ended with work `STATE.md` doesn't have yet.
+- A save made through the shell, such as `sed` on `STATE.md`, now counts like an Edit: the edit hook also sees Bash, and counts a command that names the bound track's `STATE.md`, by its path or from the track's folder, when the file just changed. Before this, a chat that saved that way looked unsaved for days, so its reminder before the reply never came back and the Stop hook fired after every working turn. Other shell commands still don't count as work.
+
 ## 0.17.0 · 2026-10-23
 
 - The reload is two hook outputs. Claude Code caps each hook's output at 10,000 characters and measures each hook on its own, so `STATE.md`, with `LESSONS.md` after it on a track whose items start clean, now has an output of its own (`hooks/load-state.sh`), and `FEATURE.md` and `CONTEXT.md` share the other with trackside's instructions. The two hooks run in parallel, so the state hook works out the chat's track the same way, reading only. On TKWW's tracks every file now reloads whole, where the largest used to leave four sections of `STATE.md` out.

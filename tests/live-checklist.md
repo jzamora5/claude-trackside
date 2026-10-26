@@ -27,10 +27,10 @@ A plugin installed from a local folder is read from that folder, so changes take
 | 3 | In a new chat, say "Let's continue with the discount feature" | It asks which of `demo/tickets` and `demo/research`; nothing is bound until you answer |
 | 4 | In a new chat, `/trackside:start demo/tickets` | The chat is renamed `demo/tickets`, and it replies with three lines: state, Inbox and repo changes, next step |
 | 5 | `/trackside:next` | It proposes T-1 with a plan, files and acceptance check, and waits; no code yet |
-| 6 | Approve T-1 | It edits `api/app.js`, then gets Stop hook feedback and updates Current and Next step in `STATE.md` before the turn ends; `.trackside/.state/stamp-demo@tickets` appears |
-| 7 | Right away, ask for another small edit | No Stop hook feedback this time: `STATE.md` was updated less than 15 minutes ago |
+| 6 | Approve T-1 | It edits `api/app.js` and updates Current and Next step in `STATE.md` before its reply, with nothing about it after the reply; `.trackside/.state/stamp-demo@tickets` appears |
+| 7 | Right away, ask for another small edit | No reminder this time: `STATE.md` was updated less than 15 minutes ago |
 | 8 | Commit in `api/` (`git -C api commit -am "T-1"`), then `/clear` and ask "What changed since the state was saved?" | It reports `api (main): 1 new commit(s)` with the subject |
-| 9 | 15 minutes after the last save, ask it to look something up on the web | It updates `STATE.md` before finishing the turn |
+| 9 | 15 minutes after the last save, ask it to look something up on the web | It updates `STATE.md` before its reply, or, if it didn't, at the start of your next message, before that answer |
 | 10 | `/compact`, then `/compact` again | After the second one it asks for `/trackside:save` and a fresh chat |
 | 11 | `/trackside:save` | `STATE.md` is updated with `[verified]`/`[assumed]` marks and a concrete next step, and `.trackside` gets a commit |
 | 12 | `/trackside:digest demo` | `.trackside/demo/DIGEST.md` exists and starts with "Built from docs/spec.md" |

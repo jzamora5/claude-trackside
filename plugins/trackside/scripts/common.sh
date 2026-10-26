@@ -61,7 +61,7 @@ bind_chat() {
     return 2
   fi
   # A reminder or an unbinding note left from before no longer applies once the chat is on another track.
-  [ "$before" = "$target" ] || rm -f "$1/.state/nudged-$2" "$1/.state/off-$2"
+  [ "$before" = "$target" ] || rm -f "$1/.state/nudged-$2" "$1/.state/off-$2" "$1/.state/owed-$2"
   printf '%s\n' "$target" > "$1/.state/track-$2"
   printf '%s' "$target"
 }
@@ -72,7 +72,7 @@ unbind_chat() {
   local before
   before=$(cat "$1/.state/track-$2" 2>/dev/null || true)
   [ -n "$before" ] || return 0
-  rm -f "$1/.state/track-$2" "$1/.state/dirty-$2" "$1/.state/saved-$2" "$1/.state/nudged-$2"
+  rm -f "$1/.state/track-$2" "$1/.state/dirty-$2" "$1/.state/saved-$2" "$1/.state/nudged-$2" "$1/.state/owed-$2"
   printf '%s (unbound)' "$before"
 }
 
