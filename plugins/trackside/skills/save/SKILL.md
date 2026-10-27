@@ -1,12 +1,15 @@
 ---
 name: save
 description: Save this chat's state to its track (the user may call a track a workspace) so a new chat can continue with no briefing. Use it in a chat bound to a track before /clear, after repeated compactions, after a long discussion, or before stopping; in a chat that isn't bound, only when the user asks to save to trackside.
+allowed-tools: Bash(bash "${CLAUDE_SKILL_DIR}/../../scripts/status.sh" *) Bash(bash "${CLAUDE_SKILL_DIR}/../../scripts/bind.sh" *)
 ---
 If `${CLAUDE_PROJECT_DIR}` has no `.trackside/` folder, which happens when a chat moves to another folder after it starts, use the nearest folder at or above the current one that has a `.trackside/` wherever this says `${CLAUDE_PROJECT_DIR}`.
 
 Run each command below exactly as written, one per call, apart from that folder when it applies: trackside pre-approves them in that form, so they run without permission prompts.
 
 Update the bound track's STATE.md in `${CLAUDE_PROJECT_DIR}/.trackside/<feature>/<track>/`. `cat "${CLAUDE_PROJECT_DIR}/.trackside/.state/track-${CLAUDE_SESSION_ID}" 2>/dev/null` prints the track this chat is bound to, as `<feature>/<track>`. If it prints nothing, run the start skill first, then save to the track it binds: with the full name of the one track that clearly fits this chat's work, or with no name, so the user picks or creates one, when more than one could fit or none does. Write it for an agent with no memory of this chat. It's done when deleting this chat would lose nothing. Write down only what a new chat couldn't get from the code, git, the docs or a command: no copied file contents, diffs or test output; point to them instead. A line that comes from the feature's source docs cites its ID (such as AD-28) or heading, so a later chat can check it against them.
+
+Before you write anything, check that the work fits the track. Compare what this chat has worked on since its last save with the track's goal in its `CONTEXT.md` and its Current work. If that work plainly belongs to another track, list the tracks with `bash "${CLAUDE_SKILL_DIR}/../../scripts/status.sh" "${CLAUDE_PROJECT_DIR}"`, and ask the user once which track to save it to, naming the one you think fits, then wait for the answer. If they pick another track, move the chat there with its unsaved work: `bash "${CLAUDE_SKILL_DIR}/../../scripts/bind.sh" "${CLAUDE_PROJECT_DIR}" "${CLAUDE_SESSION_ID}" "<feature>/<track>" move`, then save to that track. Don't ask when the work fits the track, when it only touches another track's topic in passing, or when the user already answered this in this chat.
 
 1. **Current:** the work in flight: branch or worktree, files touched, what works, what's left. Mark each line `[verified]` (checked against code, git or a test in this chat) or `[assumed]`. Include conclusions reached in discussion.
 2. **Next step:** one concrete action that names the file and function to touch, or the command to run.

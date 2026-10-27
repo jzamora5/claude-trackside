@@ -79,6 +79,14 @@ out=$(hook bind '{"session_id":"b2","prompt":"/trackside:start shop/research"}')
 ok "a typed switch with unsaved work doesn't rebind" '[ -z "$out" ] && [ "$(cat "$st/track-b2")" = shop/tickets ]'
 out=$(bash "$H/scripts/bind.sh" "$R" b2 shop/research 2>&1; echo "exit=$?")
 ok "and the bind script says to save it there first" '[[ "$out" == *"unsaved work on shop/tickets. Save it there first"* && "$out" == *"exit=2"* ]] && [ "$(cat "$st/track-b2")" = shop/tickets ]'
+printf '2026-10-27 10:00\tb2\t-\n' > "$st/stamp-shop@tickets.unsaved"; touch "$st/owed-b2"
+out=$(bash "$H/scripts/bind.sh" "$R" b2 shop/research move)
+ok "with move, the save skill switches it anyway, its unsaved work going along" '[ "$out" = "Bound this chat to shop/research." ] && [ "$(cat "$st/track-b2")" = shop/research ] && [ -f "$st/dirty-b2" ] && [ ! -f "$st/owed-b2" ]'
+ok "and the old track's note about that work goes" '[ ! -f "$st/stamp-shop@tickets.unsaved" ]'
+printf '2026-10-27 10:00\tother\t-\n' > "$st/stamp-shop@research.unsaved"
+bash "$H/scripts/bind.sh" "$R" b2 shop/tickets move >/dev/null
+ok "while another chat's note stays" '[ -f "$st/stamp-shop@research.unsaved" ]'
+rm -f "$st/stamp-shop@research.unsaved"; printf 'shop/tickets\n' > "$st/track-b2"; rm -f "$st/title-b2"
 rm -f "$st/dirty-b2"
 out=$(bash "$H/scripts/bind.sh" "$R" b2 shop/research)
 ok "once it's saved, the chat switches" '[ "$out" = "Bound this chat to shop/research." ] && [ "$(cat "$st/title-b2")" = shop/research ]'
@@ -1064,6 +1072,7 @@ done
 ok "every skill pre-approves the trackside scripts and .trackside commits it runs${missing:+ (missing:$missing)}" '[ -z "$missing" ]'
 ok "done marks the ticket done only after the commit is approved, and stops on a failed check" 'grep -q "Until then, the ticket stays open" "$H/skills/done/SKILL.md" && grep -q "If any of them fails, report it and stop" "$H/skills/done/SKILL.md"'
 ok "next checks only the repos the ticket touches" 'grep -q "in each repo the ticket touches" "$H/skills/next/SKILL.md"'
+ok "save, and so fresh, first checks the work fits the track, asks once, and moves the chat with its work" 'grep -q "check that the work fits the track" "$H/skills/save/SKILL.md" && grep -q "ask the user once which track to save it to" "$H/skills/save/SKILL.md" && grep -q "\"<feature>/<track>\" move\`" "$H/skills/save/SKILL.md" && grep -q "checks first that this chat" "$H/skills/fresh/SKILL.md"'
 ok "save lists what it recorded" 'grep -q "one line for each decision, Inbox line or rule you wrote" "$H/skills/save/SKILL.md"'
 ok "save and done leave the trackside folder's commit to the Stop hook" '! grep -q "git -C" "$H/skills/save/SKILL.md" && ! grep -q "git -C" "$H/skills/done/SKILL.md" && grep -q "trackside commits it at the end of the turn" "$H/skills/save/SKILL.md"'
 ok "saves are asked for in one edit, in the reload, the reminders and save" 'grep -q "in one edit (one Edit call or one script)" "$H/hooks/load.sh" && grep -q "in one edit (one Edit call or one script)" "$H/skills/save/SKILL.md" && grep -q "Make it one edit" "$H/hooks/track.sh" && grep -q "in one edit each" "$H/hooks/bind.sh"'

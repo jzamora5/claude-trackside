@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Usage: bind.sh <project root> <session id> <name | off>
+# Usage: bind.sh <project root> <session id> <name | off> [move]
 # Binds a chat from the start skill, for when the agent starts a track the user agreed to, or unbinds it with
-# "off". Typing /trackside:start binds through the UserPromptSubmit hook instead, which also names the chat.
+# "off". With "move", from the save skill, a chat with unsaved work switches anyway and takes that work along. Typing /trackside:start binds through the UserPromptSubmit hook instead, which also names the chat.
 set -uo pipefail
 . "$(dirname "$0")/common.sh"
 root=$(keep_root "${1:?project root}" "$PWD")
@@ -41,7 +41,7 @@ if [ "$name" = off ]; then
 fi
 
 before=$(cat "$st/track-$sid" 2>/dev/null || true)
-target=$(bind_chat "$keep" "$sid" "$name")
+target=$(bind_chat "$keep" "$sid" "$name" "${4:-}")
 case $? in
   1) echo "No track is named \"$name\". Use a track's full name, <feature>/<track>." >&2; exit 1 ;;
   2) echo "This chat has unsaved work on $target. Save it there first with /trackside:save, or unbind with /trackside:start off if it doesn't belong there, then bind again." >&2; exit 2 ;;

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.22.0 · 2026-10-27
+
+- `/trackside:save`, and so `/trackside:fresh`, first checks that the chat's work since its last save fits its track. A chat stays on the track it was bound to however far its work drifts, and `/trackside:fresh` brings it back to the same track by its name. When the work plainly belongs to another track, the save now lists the tracks and asks once which one to save it to, then moves the chat there with its unsaved work (`bind.sh ... move`), so the chat's name is remembered on that track from then on. It doesn't ask when the work fits, touches another topic only in passing, or the user already answered in that chat.
+- Eval: `save-asks-which-track`.
+
 ## 0.21.0 · 2026-10-27
 
 Cuts trackside's own token use. In the 36 hours before this, the calls trackside caused were about a tenth of this workspace's usage: two deep reviews that made 48 and 78 calls each, reading the RFC, the plugin's own scripts and the repos' history; saves made in many small shell edits, each one a call at 400–500K of context; and commits of the trackside folder, 14 calls at about 440K each.

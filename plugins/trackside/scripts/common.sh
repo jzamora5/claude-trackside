@@ -48,20 +48,25 @@ resolve_name() {
   return 0
 }
 
-# bind_chat <keep> <session id> <name>: binds the chat to the track and prints it. Returns 1 when the name
+# bind_chat <keep> <session id> <name> [move]: binds the chat to the track and prints it. Returns 1 when the name
 # matches no track or several. Returns 2, printing the current track, when the chat has unsaved work on another
-# track: switching would leave that work to be saved into the wrong one.
+# track: switching would leave that work to be saved into the wrong one. "move" says that work belongs to the new
+# track, so it moves with the chat and the old track's note about it goes.
 bind_chat() {
-  local target before
+  local target before note
   target=$(resolve_name "$1" "$3")
   [ -n "$target" ] || return 1
   before=$(cat "$1/.state/track-$2" 2>/dev/null || true)
-  if [ -n "$before" ] && [ "$before" != "$target" ] && [ -f "$1/.state/dirty-$2" ]; then
+  if [ -n "$before" ] && [ "$before" != "$target" ] && [ -f "$1/.state/dirty-$2" ] && [ "${4:-}" != move ]; then
     printf '%s' "$before"
     return 2
   fi
   # A reminder or an unbinding note left from before no longer applies once the chat is on another track.
-  [ "$before" = "$target" ] || rm -f "$1/.state/nudged-$2" "$1/.state/off-$2" "$1/.state/owed-$2"
+  if [ "$before" != "$target" ]; then
+    rm -f "$1/.state/nudged-$2" "$1/.state/off-$2" "$1/.state/owed-$2"
+    note="$(stamp_file "$1" "$before").unsaved"
+    [ -z "$before" ] || [ "$(cut -s -f2 "$note" 2>/dev/null)" != "$2" ] || rm -f "$note"
+  fi
   printf '%s\n' "$target" > "$1/.state/track-$2"
   printf '%s' "$target"
 }
