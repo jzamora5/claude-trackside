@@ -1,7 +1,6 @@
 ---
 name: done
 description: In a chat bound to a track (the user may call a track a workspace), verify the current ticket, update the feature's docs and the track's STATE.md, summarize for review, and commit only after approval.
-allowed-tools: Bash(git -C "${CLAUDE_PROJECT_DIR}/.trackside" add *) Bash(git -C "${CLAUDE_PROJECT_DIR}/.trackside" commit *)
 ---
 If `${CLAUDE_PROJECT_DIR}` has no `.trackside/` folder, which happens when a chat moves to another folder after it starts, use the nearest folder at or above the current one that has a `.trackside/` wherever this says `${CLAUDE_PROJECT_DIR}`.
 
@@ -17,5 +16,5 @@ Run each command below exactly as written, one per call, apart from that folder 
 6. Only after approval, commit in each repo in its own style (check its `git log`), with the approved lessons moved into that repo's file in the same commit; a file outside the repo, such as a project rules file, is edited without a commit. Then update the track's STATE.md in `${CLAUDE_PROJECT_DIR}/.trackside/<feature>/<track>/`: check off the ticket, add a Done-log line (date · ticket · commit hashes · how verified · its pull request as `<repo>#<number>` once there is one), clear Current, and add Dead ends and the Gotchas that didn't move to a repo's file; on a track whose `CONTEXT.md` says each item starts clean, finish the item the way its `LESSONS.md` says instead. Until then, the ticket stays open in STATE.md.
 7. Pushing and opening a pull request need a separate go-ahead. When a pull request is opened, add it to the ticket's Done-log line as `<repo>#<number>`, with `<repo>` as FEATURE.md's Repos line names it, so a later chat can check whether it merged. If the feature plans with OpenSpec, archive the change once it's merged.
 8. If trackside's check listed issues for this track in this chat, fix now the ones that only move or de-duplicate text or fill in what's missing, and list the others for the user in your reply. If it listed none, skip this.
-9. If the trackside folder is its own git repo, commit it: `git -C "${CLAUDE_PROJECT_DIR}/.trackside" add -A`, then `git -C "${CLAUDE_PROJECT_DIR}/.trackside" commit -m "<feature>/<track>: <ticket> done"`.
+9. Don't commit the trackside folder: when it has its own git history, trackside commits it at the end of the turn.
 10. End with: "Type /clear, then say next."

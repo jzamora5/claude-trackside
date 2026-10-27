@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.21.0 · 2026-10-27
+
+Cuts trackside's own token use. In the 36 hours before this, the calls trackside caused were about a tenth of this workspace's usage: two deep reviews that made 48 and 78 calls each, reading the RFC, the plugin's own scripts and the repos' history; saves made in many small shell edits, each one a call at 400–500K of context; and commits of the trackside folder, 14 calls at about 440K each.
+
+- The Stop hook commits the trackside folder, when it has its own git history, at the end of each turn that changed it ("<feature>/<track>: save"). `/trackside:save`, `/trackside:done` and the deep review no longer ask the agent to commit it.
+- Saves are asked for in one edit, one Edit call or one script, rather than a series of small ones: in the reload, the reminder during work, the reminder before the next answer, and `/trackside:save`.
+- The deep review stops after 12 turns and reads only the track's files, the feature's decisions and the memory notes whose index line is about the feature or track. It no longer reads the source docs, code, scripts, other repos or git history; the lookup and the reload's change report cover those.
+
 ## 0.20.1 · 2026-10-26
 
 Fixes from an audit of 0.20.0.

@@ -53,7 +53,7 @@ tdir="$keep/$binding"
 add "Active track: $binding (a new chat starts it with /trackside:start $binding). Its files: $(rel "$fdir")/FEATURE.md, plus CONTEXT.md, STATE.md and NOTES.md in $(rel "$tdir")/."
 add "The user may call a track a workspace; /trackside:current shows this one."
 add "STATE.md is the handoff for the next chat and must stay current. Record each decision as soon as it's made, with the options rejected and why, where FEATURE.md says decisions go. Write down only what a new chat couldn't get from the code, git, the docs or a command: no copied file contents, diffs or test output; point to them instead."
-add "Keep trackside's bookkeeping out of your replies: update STATE.md before you write a reply, not after it, and don't tell the user about saves, fixes the automatic check asked for, or commits of the trackside folder. Mention trackside only when the user has to decide something, in a line before the rest of your reply, never after a question you ask."
+add "Keep trackside's bookkeeping out of your replies: update STATE.md before you write a reply, not after it, in one edit (one Edit call or one script), never a series of small ones, since every call re-reads the whole chat; and don't tell the user about saves, fixes the automatic check asked for, or commits of the trackside folder. Mention trackside only when the user has to decide something, in a line before the rest of your reply, never after a question you ask."
 [ -z "$(source_docs "$keep" "${binding%%/*}")" ] || add "The source docs FEATURE.md lists are the source of truth: before you state, decide or change anything they cover, read it with the trackside lookup skill (/trackside:lookup <ID or heading words>), which prints the exact text, instead of trusting what STATE.md says, and cite what you use by ID (such as AD-28) or heading."
 # The note names the chat with unsaved work. That chat itself is asked at its next message. Another chat fills the gap
 # only once that chat has ended, or left it for a day; a chat from before notes named one has only the date.
@@ -97,7 +97,7 @@ if [ -z "$worktree" ]; then
   fi
   if [ "$(bash "$here/../scripts/audit.sh" "$root" "$binding" due 2>/dev/null)" = due ]; then
     add ""
-    add "trackside's periodic review of this track is due. Start the trackside audit skill for $binding now, without waiting for the user; it runs in the background on a cheaper model and reads only. When its list comes back, apply the items it marks lossless, write the other items to the track's review-<date>.md (or \"Nothing needs the user.\"; writing the file marks the review as handled) with an Inbox line pointing to it when it has items, commit the trackside folder if it's its own git repo, and show the user the other items once, at a natural pause."
+    add "trackside's periodic review of this track is due. Start the trackside audit skill for $binding now, without waiting for the user; it runs in the background on a cheaper model and reads only. When its list comes back, apply the items it marks lossless, write the other items to the track's review-<date>.md (or \"Nothing needs the user.\"; writing the file marks the review as handled) with an Inbox line pointing to it when it has items, and show the user the other items once, at a natural pause."
   fi
 fi
 out+="$(reload_files "$keep" "$binding" $(( budget - $(bytes "$out") - 200 )))"$'\n'

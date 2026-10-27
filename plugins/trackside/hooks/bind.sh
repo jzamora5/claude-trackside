@@ -32,7 +32,7 @@ fi
 owed=""
 b=$(cat "$st/track-$sid" 2>/dev/null || true)
 if [ -n "$b" ] && [ -f "$st/owed-$sid" ] && [ -f "$st/dirty-$sid" ] && [ -z "$worktree" ]; then
-  owed="The last turn's work isn't in $(rel "$keep/$b")/STATE.md yet. Before you answer this message, update its Current and Next step, a line each, marked [verified] or [assumed], and record any decision made since where FEATURE.md says decisions go, without mentioning it in your reply."
+  owed="The last turn's work isn't in $(rel "$keep/$b")/STATE.md yet. Before you answer this message, update its Current and Next step, a line each, marked [verified] or [assumed], and record any decision made since where FEATURE.md says decisions go, in one edit each, without mentioning it in your reply."
   touch "$st/nudged-$sid"
 fi
 # A chat is offered a fresh one at most once each time it compacts: when its context nears the size at which it

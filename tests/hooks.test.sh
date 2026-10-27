@@ -309,7 +309,7 @@ ok "once a save is due it asks again, after research too" '[[ "$out" == *"Before
 out=$(TRACKSIDE_SAVE_MINUTES=0 hook stop '{"session_id":"v1","stop_hook_active":false}'); out=$(hook bind '{"session_id":"v1","prompt":"and the next thing?"}')
 ok "a chat that didn't save before replying is asked at its next message, before that answer, quietly" '[[ "$out" == *"Before you answer this message"* && "$out" == *"without mentioning it in your reply"* ]]'
 out=$(hook load '{"session_id":"s1","source":"resume"}')
-ok "a bound chat is told to keep the bookkeeping out of its replies" '[[ "$out" == *"update STATE.md before you write a reply, not after it, and don'"'"'t tell the user about saves"* ]]'
+ok "a bound chat is told to keep the bookkeeping out of its replies" '[[ "$out" == *"update STATE.md before you write a reply, not after it, in one edit (one Edit call or one script), never a series of small ones"* && "$out" == *"don'"'"'t tell the user about saves"* ]]'
 rm -f "$st"/*-v1
 
 echo "--- compaction and /clear"
@@ -655,6 +655,15 @@ ok "setup-git keeps .trackside/ out of the project's git" '[ -z "$(git -C "$G" s
 ok "and gives it its own history" '[ "$(git -C "$G/.trackside" rev-list --count HEAD 2>/dev/null)" = 1 ] && [ -z "$(git -C "$G/.trackside" ls-files .state INDEX.md)" ]'
 out=$(gitenv bash "$H/scripts/setup-git.sh" "$G" ignore history)
 ok "running it again changes nothing" '[ -z "$out" ] && [ "$(grep -cx "/.trackside/" "$G/.git/info/exclude")" = 1 ]'
+printf -- '- a save\n' >> "$G/.trackside/app/main/STATE.md"
+gitenv bash -c 'printf "%s" "$1" | CLAUDE_PROJECT_DIR="$2" "$3/hooks/stop.sh"' _ '{"session_id":"g","stop_hook_active":false}' "$G" "$H" >/dev/null
+ok "at the end of a turn the Stop hook commits what changed in the trackside folder" '[ "$(git -C "$G/.trackside" rev-list --count HEAD)" = 2 ] && [ "$(git -C "$G/.trackside" log -1 --format=%s)" = "app/main: save" ] && [ -z "$(git -C "$G/.trackside" status --porcelain)" ]'
+gitenv bash -c 'printf "%s" "$1" | CLAUDE_PROJECT_DIR="$2" "$3/hooks/stop.sh"' _ '{"session_id":"g","stop_hook_active":false}' "$G" "$H" >/dev/null
+ok "and nothing when nothing changed" '[ "$(git -C "$G/.trackside" rev-list --count HEAD)" = 2 ]'
+printf -- '- more\n' >> "$G/.trackside/app/main/STATE.md"
+gitenv bash -c 'printf "%s" "$1" | CLAUDE_PROJECT_DIR="$2" "$3/hooks/stop.sh"' _ '{"session_id":"nobody","stop_hook_active":false}' "$G" "$H" >/dev/null
+ok "an unbound chat leaves it alone" '[ "$(git -C "$G/.trackside" rev-list --count HEAD)" = 2 ]'
+git -C "$G/.trackside" checkout -q -- app/main/STATE.md
 mkdir -p "$G/sub/.trackside"
 gitenv bash "$H/scripts/setup-git.sh" "$G/sub" ignore >/dev/null
 ok "a project in a repo's subfolder is excluded by its own path, and ignore alone adds no history" 'grep -qx "/sub/.trackside/" "$G/.git/info/exclude" && [ -z "$(git -C "$G" status --porcelain)" ] && [ ! -e "$G/sub/.trackside/.git" ]'
@@ -1056,6 +1065,9 @@ ok "every skill pre-approves the trackside scripts and .trackside commits it run
 ok "done marks the ticket done only after the commit is approved, and stops on a failed check" 'grep -q "Until then, the ticket stays open" "$H/skills/done/SKILL.md" && grep -q "If any of them fails, report it and stop" "$H/skills/done/SKILL.md"'
 ok "next checks only the repos the ticket touches" 'grep -q "in each repo the ticket touches" "$H/skills/next/SKILL.md"'
 ok "save lists what it recorded" 'grep -q "one line for each decision, Inbox line or rule you wrote" "$H/skills/save/SKILL.md"'
+ok "save and done leave the trackside folder's commit to the Stop hook" '! grep -q "git -C" "$H/skills/save/SKILL.md" && ! grep -q "git -C" "$H/skills/done/SKILL.md" && grep -q "trackside commits it at the end of the turn" "$H/skills/save/SKILL.md"'
+ok "saves are asked for in one edit, in the reload, the reminders and save" 'grep -q "in one edit (one Edit call or one script)" "$H/hooks/load.sh" && grep -q "in one edit (one Edit call or one script)" "$H/skills/save/SKILL.md" && grep -q "Make it one edit" "$H/hooks/track.sh" && grep -q "in one edit each" "$H/hooks/bind.sh"'
+ok "the deep review is capped in turns and kept to the track's files" 'grep -qx "maxTurns: 12" "$H/agents/auditor.md" && grep -q "Read nothing else: not the source docs, code, scripts, other repos or git history" "$H/skills/audit/SKILL.md" && ! grep -q "or the source docs contradict" "$H/skills/audit/SKILL.md"'
 ok "the git offer comes only when .trackside/ is created" 'grep -q "If \`\${CLAUDE_PROJECT_DIR}/.trackside/\` doesn'"'"'t exist yet, also offer three separate choices" "$H/skills/start/SKILL.md"'
 ok "new tracks don't load NOTES.md at every start" '! grep -q "^\*\*Read on start:\*\*" "$H/templates/CONTEXT.md"'
 ok "next, done and save read the chat's binding before acting" '[ "$(grep -l "track-\${CLAUDE_SESSION_ID}" "$H"/skills/{next,done,save}/SKILL.md | wc -l | tr -d " ")" = 3 ]'

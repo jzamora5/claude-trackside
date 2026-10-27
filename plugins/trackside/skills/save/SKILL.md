@@ -1,7 +1,6 @@
 ---
 name: save
 description: Save this chat's state to its track (the user may call a track a workspace) so a new chat can continue with no briefing. Use it in a chat bound to a track before /clear, after repeated compactions, after a long discussion, or before stopping; in a chat that isn't bound, only when the user asks to save to trackside.
-allowed-tools: Bash(git -C "${CLAUDE_PROJECT_DIR}/.trackside" add *) Bash(git -C "${CLAUDE_PROJECT_DIR}/.trackside" commit *)
 ---
 If `${CLAUDE_PROJECT_DIR}` has no `.trackside/` folder, which happens when a chat moves to another folder after it starts, use the nearest folder at or above the current one that has a `.trackside/` wherever this says `${CLAUDE_PROJECT_DIR}`.
 
@@ -14,9 +13,9 @@ Update the bound track's STATE.md in `${CLAUDE_PROJECT_DIR}/.trackside/<feature>
 3. **Tickets:** check off only what passed its acceptance check. **Done log:** one line each, newest first: date · ticket · commit hash · how it was verified, or "unverified".
 4. **Dead ends:** approaches tried or rejected and why, and areas not to touch. **Gotchas:** anything learned the hard way. On a track whose `CONTEXT.md` says each item starts clean, lessons go to `LESSONS.md` instead, and a finished item leaves `STATE.md` the way `LESSONS.md` says.
 5. **Decisions:** check that every decision made in this chat is recorded where FEATURE.md says decisions go, with the options rejected and why; record any that aren't. A decision that affects another track also gets a line in that track's Inbox: date · from · what changed · affects.
-6. Edit STATE.md in place: never rewrite it whole, and never delete a ticket or Done-log line. Leave an empty section with just its comment. Keep it small enough that the reload loads it whole, by moving older Done-log lines and settled gotchas to NOTES.md; trackside's check says when it no longer does.
+6. Edit STATE.md in place, in one edit (one Edit call or one script) rather than a series of small ones, since every call re-reads the whole chat: never rewrite it whole, and never delete a ticket or Done-log line. Leave an empty section with just its comment. Keep it small enough that the reload loads it whole, by moving older Done-log lines and settled gotchas to NOTES.md; trackside's check says when it no longer does.
 7. Check the handoff the way a new chat would see it: ask the `handoff-check` subagent, passing it only the track's full name and the paths of the feature's FEATURE.md and the track's CONTEXT.md, LESSONS.md (when it has one) and STATE.md, never a summary of your own. Where its answers are wrong, or it had to guess something you know, fix STATE.md or CONTEXT.md now. Tell the user only about gaps you can't fill, and don't mention the check otherwise.
 8. If trackside's check listed issues for this track in this chat, fix now the ones that only move or de-duplicate text or fill in what's missing, and list the others for the user in your reply. If it listed none, skip this.
 9. If the user corrected the same mistake more than once, propose a one-line rule for FEATURE.md or CONTEXT.md. Show it; don't add it silently.
-10. Don't commit unfinished code without asking. If the trackside folder is its own git repo, commit it: `git -C "${CLAUDE_PROJECT_DIR}/.trackside" add -A`, then `git -C "${CLAUDE_PROJECT_DIR}/.trackside" commit -m "<feature>/<track>: save"`.
+10. Don't commit unfinished code without asking. Don't commit the trackside folder: when it has its own git history, trackside commits it at the end of the turn.
 11. Reply with "Saved.", then one line for each decision, Inbox line or rule you wrote.

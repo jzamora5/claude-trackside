@@ -15,7 +15,7 @@ mark_dirty() {
   [ -z "$worktree" ] && save_due "$st" "$sid" || return 0
   [ -f "$st/nudged-$sid" ] && return 0
   touch "$st/nudged-$sid"
-  jq -n --arg p "$(rel "$tdir")/STATE.md" '{hookSpecificOutput: {hookEventName: "PostToolUse", additionalContext: ("Before you write your reply to the user, update " + $p + ": its Current and Next step, a line each, marked [verified] or [assumed], and any decision made since, where FEATURE.md says decisions go. Do it quietly, without mentioning it in your reply.")}}'
+  jq -n --arg p "$(rel "$tdir")/STATE.md" '{hookSpecificOutput: {hookEventName: "PostToolUse", additionalContext: ("Before you write your reply to the user, update " + $p + ": its Current and Next step, a line each, marked [verified] or [assumed], and any decision made since, where FEATURE.md says decisions go. Make it one edit, and do it quietly, without mentioning it in your reply.")}}'
 }
 
 fp=""
