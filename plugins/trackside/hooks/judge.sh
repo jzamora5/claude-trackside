@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Stop, in the background: once a bound chat's context passes TRACKSIDE_JUDGE_TOKENS (default 400000; 0 turns it off),
+# Stop, in the background: once a bound chat's context passes TRACKSIDE_JUDGE_TOKENS (default 300000; 0 turns it off),
 # a cheaper model (TRACKSIDE_JUDGE_MODEL, default haiku) compares the chat's last messages with the track's files and
 # the feature's DECISIONS.md, each cut at 40 KB, at most once each time the chat compacts and never once a fresh chat
 # is due anyway. It runs as its own Claude Code process, so the chat spends nothing on it. Only findings whose quotes
@@ -7,7 +7,7 @@
 # to show. Each run logs its counts, never the chat's text, to .state/judge-log.
 . "$(dirname "$0")/lib.sh"
 here="$(cd "$(dirname "$0")" && pwd)"
-line="${TRACKSIDE_JUDGE_TOKENS:-400000}"
+line="${TRACKSIDE_JUDGE_TOKENS:-300000}"
 [[ "$line" =~ ^[0-9]+$ ]] && [ "$line" -gt 0 ] || exit 0
 [ -n "$binding" ] && [ -f "$keep/$binding/STATE.md" ] && [ -z "$worktree" ] && [ ! -f "$st/whole-$sid" ] || exit 0
 transcript=$(field .transcript_path)

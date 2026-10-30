@@ -39,6 +39,7 @@ fi
 # compacts (size_due), or when the judge (judge.sh) found its replies disagree with the track. A chat kept whole, or
 # one in a worktree, which can't save, is never offered.
 offer=""
+warn=""
 if [ -n "$b" ] && [ -z "$worktree" ] && [ ! -f "$st/whole-$sid" ]; then
   read -r tokens model point <<<"$(context_usage "$(field .transcript_path)")"
   if [[ "${point:-}" =~ ^[0-9]+$ ]] && [ "$point" -ge 100000 ] && [ -n "$model" ]; then
@@ -50,6 +51,8 @@ if [ -n "$b" ] && [ -z "$worktree" ] && [ ! -f "$st/whole-$sid" ]; then
   found=$(cat "$st/health-$sid" 2>/dev/null || true); rm -f "$st/health-$sid"
   fresh="once, in one line before the rest of your reply to this message, to continue in a fresh chat: /trackside:fresh saves the track and clears this chat, which then reloads the track; /trackside:whole keeps this chat as it is with no more offers, for a chat to keep complete, such as for an audit; otherwise trackside asks again after the next compaction. Run neither unless the user asks."
   if [ -n "$found" ]; then
+    # The agent doesn't always say so, so the user sees the findings too.
+    warn="trackside's context check: this chat's recent replies disagree with $b's files:"$'\n'"$found"$'\n'"If the chat got it wrong, /trackside:fresh continues the track in a fresh chat."
     offer="trackside's context check compared this chat's recent replies with the track's files and found these disagreements:"$'\n'"$found"$'\n'"Before you answer, settle each: if the track is out of date, update it; if a reply of yours was wrong, say so in a line before the rest of your reply."
     [ -z "$due" ] || offer+=" If one was, also offer $fresh"
   elif [ -n "$due" ] && size_due "$st" "$sid" "${tokens:-}" "${model:-}"; then
@@ -76,6 +79,6 @@ elif [ -z "$title" ] && [ -s "$st/title-$sid" ]; then
 fi
 rm -f "$st/title-$sid"
 [ -n "$title$context" ] || exit 0
-jq -n --arg t "$title" --arg c "$context" \
-  '{hookSpecificOutput: ({hookEventName: "UserPromptSubmit"} + (if $t != "" then {sessionTitle: $t} else {} end) + (if $c != "" then {additionalContext: $c} else {} end))}'
+jq -n --arg t "$title" --arg c "$context" --arg w "$warn" \
+  '(if $w != "" then {systemMessage: $w} else {} end) + {hookSpecificOutput: ({hookEventName: "UserPromptSubmit"} + (if $t != "" then {sessionTitle: $t} else {} end) + (if $c != "" then {additionalContext: $c} else {} end))}'
 exit 0

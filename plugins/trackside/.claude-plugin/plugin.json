@@ -1,6 +1,6 @@
 {
   "name": "trackside",
-  "version": "0.22.0",
+  "version": "0.23.0",
   "description": "Feature and track state for Claude Code: kept current as the agent works, reloaded in every new chat.",
   "author": {
     "name": "jzamora5"

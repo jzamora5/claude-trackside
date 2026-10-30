@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.23.0 · 2026-10-30
+
+From the judge's first 12 runs (2026-10-26 to 10-30, at 400–730K tokens): of its 12 findings, 7 were the chat's own mistakes, such as asking again for production approvals already given, calling a recorded cost unknown, misremembering a ticket's Jira status, and raising an item the user had already decided; 1 was a stale track file, 2 couldn't be told apart, and none was a false alarm. Three of the chats had never compacted, so quality does drop below the compaction size. But only one chat told the user, as the instruction asks; the rest corrected course quietly or not at all.
+
+- The judge's findings reach you as a warning from the prompt hook (`systemMessage`), whatever the agent says, with a pointer to `/trackside:fresh`.
+- The judge starts at 300K tokens instead of 400K (`TRACKSIDE_JUDGE_TOKENS`), to see whether the mistakes start earlier.
+
 ## 0.22.0 · 2026-10-27
 
 - `/trackside:save`, and so `/trackside:fresh`, first checks that the chat's work since its last save fits its track. A chat stays on the track it was bound to however far its work drifts, and `/trackside:fresh` brings it back to the same track by its name. When the work plainly belongs to another track, the save now lists the tracks and asks once which one to save it to, then moves the chat there with its unsaved work (`bind.sh ... move`), so the chat's name is remembered on that track from then on. It doesn't ask when the work fits, touches another topic only in passing, or the user already answered in that chat.

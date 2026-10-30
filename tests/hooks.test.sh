@@ -552,18 +552,22 @@ chmod +x "$J/bin/claude"
 jd() { printf '{"session_id":"j1","transcript_path":"%s","last_assistant_message":"Done, it floors now."}' "$J/t.jsonl" | PATH="$J/bin:$PATH" CLAUDE_PROJECT_DIR="$J" "$H/hooks/judge.sh"; }
 runs() { cat "$J/bin/runs" 2>/dev/null || echo 0; }
 jd
-ok "past 400K tokens the judge runs as its own Claude Code process, without tools, settings or a saved session" '[ "$(runs)" = 1 ] && [ "$(cat "$J/bin/child")" = 1 ] && [[ "$(cat "$J/bin/args")" == "-p --model haiku --tools  --strict-mcp-config --no-session-persistence --disable-slash-commands --setting-sources  --system-prompt-file $H/hooks/judge.md" ]]'
+ok "past 300K tokens the judge runs as its own Claude Code process, without tools, settings or a saved session" '[ "$(runs)" = 1 ] && [ "$(cat "$J/bin/child")" = 1 ] && [[ "$(cat "$J/bin/args")" == "-p --model haiku --tools  --strict-mcp-config --no-session-persistence --disable-slash-commands --setting-sources  --system-prompt-file $H/hooks/judge.md" ]]'
 ok "it reads the track's files, the feature's decisions and the chat's words, with the reply that just ended, and no tool output or notices" 'grep -q "^=== FILE STATE.md ===" "$J/bin/stdin" && grep -q "^=== FILE DECISIONS.md ===" "$J/bin/stdin" && grep -q "^USER: Which rounding" "$J/bin/stdin" && grep -q "^ASSISTANT: We round discounts" "$J/bin/stdin" && grep -q "^ASSISTANT: Done, it floors now." "$J/bin/stdin" && ! grep -q "TOOL OUTPUT" "$J/bin/stdin" && ! grep -q NOTICE "$J/bin/stdin"'
 ok "only a finding quoting the chat's replies and the file it names word for word is kept" '[ "$(grep -c "" "$js/health-j1")" = 2 ] && [ "$(head -1 "$js/health-j1")" = "- The chat said \"We round discounts down to whole dollars\"; STATE.md says \"discounts round to the nearest cent, never to whole dollars\" (floor vs cents)" ] && grep -q "; DECISIONS.md says \"Rejected: storing totals as floats, because cents drift\"" "$js/health-j1"'
 ok "its log counts what it found and keeps none of the chat's words" '[[ "$(cat "$js/judge-log")" == *"	app/main	m-1	500000	found 4	kept 2" ]] && ! grep -q round "$js/judge-log"'
 jd
 ok "it runs once until the chat compacts" '[ "$(runs)" = 1 ]'
-out=$(printf '{"session_id":"j1","prompt":"next","transcript_path":"%s"}' "$J/t.jsonl" | CLAUDE_PROJECT_DIR="$J" "$H/hooks/bind.sh" | jq -r .hookSpecificOutput.additionalContext)
+raw=$(printf '{"session_id":"j1","prompt":"next","transcript_path":"%s"}' "$J/t.jsonl" | CLAUDE_PROJECT_DIR="$J" "$H/hooks/bind.sh")
+out=$(jq -r .hookSpecificOutput.additionalContext <<<"$raw")
 ok "the next prompt shows what it found, to settle before the answer" '[[ "$out" == "trackside'"'"'s context check compared"*"- The chat said \"We round discounts down to whole dollars\""*"Before you answer, settle each"* ]] && [ ! -f "$js/health-j1" ]'
+ok "and shows the user the same findings as a warning, whatever the agent says" '[[ "$(jq -r .systemMessage <<<"$raw")" == "trackside'"'"'s context check: this chat'"'"'s recent replies disagree with app/main'"'"'s files:"$'"'"'\n'"'"'"- The chat said \"We round discounts down to whole dollars\""*"If the chat got it wrong, /trackside:fresh continues the track in a fresh chat." ]]'
 ok "and offers a fresh chat if a reply was wrong" '[[ "$out" == *"If one was, also offer once, in one line before the rest of your reply"* ]] && [ "$(cat "$js/offered-j1")" = 0 ]'
 echo 1 > "$js/compactions-j1"; jd
 ok "it runs again after a compaction" '[ "$(runs)" = 2 ]'
 rm -f "$js/judged-j1" "$js/offered-j1"
+jq -c '.message.usage.cache_read_input_tokens = 289998' "$J/t.jsonl" > "$J/t2.jsonl"; cp "$J/t.jsonl" "$J/t1.jsonl"; cp "$J/t2.jsonl" "$J/t.jsonl"; jd; cp "$J/t1.jsonl" "$J/t.jsonl"
+ok "not below 300K by default" '[ "$(runs)" = 2 ]'
 TRACKSIDE_JUDGE_TOKENS=600000 jd
 ok "not below TRACKSIDE_JUDGE_TOKENS" '[ "$(runs)" = 2 ]'
 TRACKSIDE_JUDGE_TOKENS=0 jd
