@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Stop, in the background: once a bound chat's context passes TRACKSIDE_JUDGE_TOKENS (default 300000; 0 turns it off),
 # a cheaper model (TRACKSIDE_JUDGE_MODEL, default haiku) compares the chat's last messages with the track's files and
-# the feature's DECISIONS.md, each cut at 40 KB, at most once each time the chat compacts and never once a fresh chat
-# is due anyway. It runs as its own Claude Code process, so the chat spends nothing on it. Only findings whose quotes
+# the feature's DECISIONS.md, each cut at 40 KB. It runs again each time the context grows by TRACKSIDE_JUDGE_STEP
+# (default 200000; 0 means once) within a compaction cycle, so a 1M chat is checked all the way up, and never once
+# the chat has been offered a fresh one or is due that offer anyway. It runs as its own Claude Code process, so the chat spends nothing on it. Only findings whose quotes
 # appear word for word, the chat's in its own replies and the track's in the file named, are kept for the prompt hook
 # to show. Each run logs its counts, never the chat's text, to .state/judge-log.
 . "$(dirname "$0")/lib.sh"
@@ -14,11 +15,18 @@ transcript=$(field .transcript_path)
 read -r tokens model point <<<"$(context_usage "$transcript")"
 [[ "${tokens:-}" =~ ^[0-9]+$ ]] && [ "$tokens" -ge "$line" ] || exit 0
 c=$(compactions "$st" "$sid")
-[ "$(cat "$st/judged-$sid" 2>/dev/null)" != "$c" ] && [ "$(cat "$st/offered-$sid" 2>/dev/null)" != "$c" ] || exit 0
+[ "$(cat "$st/offered-$sid" 2>/dev/null)" != "$c" ] || exit 0
+step="${TRACKSIDE_JUDGE_STEP:-200000}"
+[[ "$step" =~ ^[0-9]+$ ]] || step=200000
+read -r jc jt 2>/dev/null < "$st/judged-$sid" || true
+if [ "${jc:-}" = "$c" ]; then
+  [[ "${jt:-}" =~ ^[0-9]+$ ]] || jt=0
+  [ "$step" -gt 0 ] && [ "$tokens" -ge $(( jt + step )) ] || exit 0
+fi
 size_due "$st" "$sid" "$tokens" "$model" && exit 0
 cli=$(command -v claude 2>/dev/null || printf '%s' "${CLAUDE_CODE_EXECPATH:-}")
 [ -n "$cli" ] && [ -x "$cli" ] || exit 0
-echo "$c" > "$st/judged-$sid"
+echo "$c $tokens" > "$st/judged-$sid"
 
 w=$(mktemp -d "${TMPDIR:-/tmp}/trackside-judge.XXXXXX") || exit 0
 trap 'rm -rf "$w"' EXIT

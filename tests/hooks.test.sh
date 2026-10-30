@@ -557,25 +557,34 @@ ok "it reads the track's files, the feature's decisions and the chat's words, wi
 ok "only a finding quoting the chat's replies and the file it names word for word is kept" '[ "$(grep -c "" "$js/health-j1")" = 2 ] && [ "$(head -1 "$js/health-j1")" = "- The chat said \"We round discounts down to whole dollars\"; STATE.md says \"discounts round to the nearest cent, never to whole dollars\" (floor vs cents)" ] && grep -q "; DECISIONS.md says \"Rejected: storing totals as floats, because cents drift\"" "$js/health-j1"'
 ok "its log counts what it found and keeps none of the chat's words" '[[ "$(cat "$js/judge-log")" == *"	app/main	m-1	500000	found 4	kept 2" ]] && ! grep -q round "$js/judge-log"'
 jd
-ok "it runs once until the chat compacts" '[ "$(runs)" = 1 ]'
+ok "it doesn't run again until the context grows by 200K" '[ "$(runs)" = 1 ] && [ "$(cat "$js/judged-j1")" = "0 500000" ]'
+ctxt() { jq -c --argjson n "$1" '.message.usage.cache_read_input_tokens = ($n - 2)' "$J/t1.jsonl" > "$J/t.jsonl"; }
+cp "$J/t.jsonl" "$J/t1.jsonl"
+ctxt 699999; jd
+ok "short of that, still not" '[ "$(runs)" = 1 ]'
+ctxt 700000; jd
+ok "at 200K more it runs again, within the same compaction cycle" '[ "$(runs)" = 2 ] && [ "$(cat "$js/judged-j1")" = "0 700000" ]'
+ctxt 950000; TRACKSIDE_JUDGE_STEP=0 jd
+ok "TRACKSIDE_JUDGE_STEP=0 runs it once per cycle" '[ "$(runs)" = 2 ]'
+cp "$J/t1.jsonl" "$J/t.jsonl"
 raw=$(printf '{"session_id":"j1","prompt":"next","transcript_path":"%s"}' "$J/t.jsonl" | CLAUDE_PROJECT_DIR="$J" "$H/hooks/bind.sh")
 out=$(jq -r .hookSpecificOutput.additionalContext <<<"$raw")
 ok "the next prompt shows what it found, to settle before the answer" '[[ "$out" == "trackside'"'"'s context check compared"*"- The chat said \"We round discounts down to whole dollars\""*"Before you answer, settle each"* ]] && [ ! -f "$js/health-j1" ]'
 ok "and shows the user the same findings as a warning, whatever the agent says" '[[ "$(jq -r .systemMessage <<<"$raw")" == "trackside'"'"'s context check: this chat'"'"'s recent replies disagree with app/main'"'"'s files:"$'"'"'\n'"'"'"- The chat said \"We round discounts down to whole dollars\""*"If the chat got it wrong, /trackside:fresh continues the track in a fresh chat." ]]'
 ok "and offers a fresh chat if a reply was wrong" '[[ "$out" == *"If one was, also offer once, in one line before the rest of your reply"* ]] && [ "$(cat "$js/offered-j1")" = 0 ]'
 echo 1 > "$js/compactions-j1"; jd
-ok "it runs again after a compaction" '[ "$(runs)" = 2 ]'
+ok "it runs again after a compaction" '[ "$(runs)" = 3 ]'
 rm -f "$js/judged-j1" "$js/offered-j1"
-jq -c '.message.usage.cache_read_input_tokens = 289998' "$J/t.jsonl" > "$J/t2.jsonl"; cp "$J/t.jsonl" "$J/t1.jsonl"; cp "$J/t2.jsonl" "$J/t.jsonl"; jd; cp "$J/t1.jsonl" "$J/t.jsonl"
-ok "not below 300K by default" '[ "$(runs)" = 2 ]'
+ctxt 290000; jd; cp "$J/t1.jsonl" "$J/t.jsonl"
+ok "not below 300K by default" '[ "$(runs)" = 3 ]'
 TRACKSIDE_JUDGE_TOKENS=600000 jd
-ok "not below TRACKSIDE_JUDGE_TOKENS" '[ "$(runs)" = 2 ]'
+ok "not below TRACKSIDE_JUDGE_TOKENS" '[ "$(runs)" = 3 ]'
 TRACKSIDE_JUDGE_TOKENS=0 jd
-ok "0 turns it off" '[ "$(runs)" = 2 ]'
+ok "0 turns it off" '[ "$(runs)" = 3 ]'
 echo 540000 > "$js/limit-m-1"; jd; rm -f "$js/limit-m-1"
-ok "nor when the chat is due its offer anyway" '[ "$(runs)" = 2 ]'
+ok "nor when the chat is due its offer anyway" '[ "$(runs)" = 3 ]'
 touch "$js/whole-j1"; jd; rm -f "$js/whole-j1"
-ok "nor in a chat kept whole" '[ "$(runs)" = 2 ]'
+ok "nor in a chat kept whole" '[ "$(runs)" = 3 ]'
 out=$(printf '{"session_id":"g9","prompt":"/trackside:start app/main"}' | TRACKSIDE_CHILD=1 CLAUDE_PROJECT_DIR="$J" "$H/hooks/bind.sh"; echo "exit=$?")
 ok "inside the judge's own process trackside's hooks do nothing" '[ "$out" = "exit=0" ] && [ ! -f "$js/track-g9" ]'
 rm -rf "${J:?}"

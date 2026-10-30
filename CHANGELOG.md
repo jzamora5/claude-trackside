@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.23.1 · 2026-10-30
+
+- The judge checks again each time the context grows by another 200K (`TRACKSIDE_JUDGE_STEP`; 0 checks once per compaction), until the chat compacts or is offered a fresh one. 0.23.0 moved its single check per compaction to 300K, so a 1M chat was checked at 300K and then not until it compacted near 970K: past the 400–730K range where every real finding so far was made. A 1M chat now gets up to four checks, about 5K Haiku tokens each, and the chat itself spends nothing on them.
+
 ## 0.23.0 · 2026-10-30
 
 From the judge's first 12 runs (2026-10-26 to 10-30, at 400–730K tokens): of its 12 findings, 7 were the chat's own mistakes, such as asking again for production approvals already given, calling a recorded cost unknown, misremembering a ticket's Jira status, and raising an item the user had already decided; 1 was a stale track file, 2 couldn't be told apart, and none was a false alarm. Three of the chats had never compacted, so quality does drop below the compaction size. But only one chat told the user, as the instruction asks; the rest corrected course quietly or not at all.
