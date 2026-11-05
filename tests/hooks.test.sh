@@ -47,8 +47,10 @@ ok "the state folder ignores itself in git" '[ "$(cat "$st/.gitignore")" = "*" ]
 out=$(hook bind '{"session_id":"s1","prompt":"/trackside:start shop/tickets"}')
 ok "bind names the chat after the track" '[ "$(jq -r .hookSpecificOutput.sessionTitle <<<"$out")" = shop/tickets ]'
 ok "bind records the binding" '[ "$(cat "$st/track-s1")" = shop/tickets ]'
-out=$(hook bind '{"session_id":"s2","prompt":"/start shop/research"}')
-ok "the unprefixed form binds too" '[ "$(cat "$st/track-s2" 2>/dev/null)" = shop/research ]'
+out=$(hook bind '{"session_id":"s2x","prompt":"/start shop/research"}')
+ok "a bare /start, which may be another plugin's command, doesn't bind" '[ ! -f "$st/track-s2x" ]'
+out=$(hook bind '{"session_id":"s2","prompt":"/trackside:start shop/research"}')
+ok "the full command does" '[ "$(cat "$st/track-s2" 2>/dev/null)" = shop/research ]'
 for p in "/trackside:start solo" "/trackside:start research" "/trackside:start main" "/trackside:start research fix the totals"; do
   hook bind "{\"session_id\":\"r1\",\"prompt\":\"$p\"}" >/dev/null
   ok "a bare name doesn't bind, even when one track has it: ${p#/trackside:start }" '[ ! -f "$st/track-r1" ]'
@@ -58,6 +60,33 @@ out=$(bash "$H/scripts/status.sh" "$R")
 ok "the listing gives each track's full start command" '[[ "$out" == *"shop/tickets: Ticket: T-7 checkout fix (start: /trackside:start shop/tickets)"* && "$out" == *"(start: /trackside:start solo/main)"* ]]'
 out=$(hook bind '{"session_id":"s8","prompt":"/trackside:start shop/tickets and continue"}')
 ok "words after the track are fine" '[ "$(cat "$st/track-s8" 2>/dev/null)" = shop/tickets ]'; rm -f "$st/track-s8"
+
+echo "--- rebinding at the first message"
+(. "$H/scripts/common.sh"; map_name "$K" "My research chat" shop/research; map_name "$K" "Left alone" off)
+hook load '{"session_id":"rb1","source":"startup"}' >/dev/null
+ok "a chat that starts unbound is marked for one rebind at its first message" '[ -f "$st/pending-rb1" ]'
+for s in rb2 rb3 rb4 rb5 rb6; do touch "$st/pending-$s"; done
+out=$(hook bind '{"session_id":"rb1","prompt":"continue","session_title":"My research chat"}')
+ok "a chat that started unbound is put back on its track from its name at the first message" '[ "$(cat "$st/track-rb1" 2>/dev/null)" = shop/research ] && [[ "$(jq -r .hookSpecificOutput.additionalContext <<<"$out")" == "This chat is back on its track, shop/research, by its name \"My research chat\""*"read .trackside/shop/FEATURE.md, then .trackside/shop/research/CONTEXT.md and STATE.md"*"propose STATE.md'"'"'s Next step and wait for the user'"'"'s OK"* ]] && [ ! -f "$st/pending-rb1" ]'
+out=$(hook bind '{"session_id":"rb2","prompt":"go on","session_title":"shop/tickets"}')
+ok "so is one named after its track" '[ "$(cat "$st/track-rb2" 2>/dev/null)" = shop/tickets ]'
+out=$(hook bind '{"session_id":"rb3","prompt":"hi","session_title":"Left alone"}')
+ok "not a chat whose name the user unbound" '[ ! -f "$st/track-rb3" ] && [ -z "$out" ]'
+out=$(hook bind '{"session_id":"rb4","prompt":"hi","session_title":"shop/tickets (unbound)"}')
+ok "nor one titled as unbound" '[ ! -f "$st/track-rb4" ]'
+out=$(hook bind '{"session_id":"rb5","prompt":"hi","session_title":"Something else"}')
+ok "nor one whose name trackside doesn't know" '[ ! -f "$st/track-rb5" ] && [ -z "$out" ]'
+printf 'shop/research\n' > "$st/track-rb6"
+out=$(hook bind '{"session_id":"rb6","prompt":"hi","session_title":"shop/tickets"}')
+ok "and a chat already on a track stays there" '[ "$(cat "$st/track-rb6")" = shop/research ] && [[ "$out" != *"back on its track"* ]]'
+out=$(hook bind '{"session_id":"rb7","prompt":"hi","session_title":"shop/tickets"}')
+ok "only at the first message after an unbound start: a later unbound chat isn't rebound" '[ ! -f "$st/track-rb7" ] && [ -z "$out" ]'
+hook bind '{"session_id":"rb8","prompt":"/trackside:start shop/tickets"}' >/dev/null
+bash "$H/scripts/bind.sh" "$R" rb8 off >/dev/null
+out=$(hook bind '{"session_id":"rb8","prompt":"thanks","session_title":"shop/tickets"}')
+ok "so a chat unbound by asking in words stays unbound while the app still shows the track as its title" '[ ! -f "$st/track-rb8" ] && [[ "$out" != *"back on its track"* ]]'
+rm -f "${st:?}"/*-rb[0-9]
+(. "$H/scripts/common.sh"; rm -f "$(name_file "$K" "My research chat")" "$(name_file "$K" "Left alone")")
 
 echo "--- binding from the start skill"
 out=$(bash "$H/scripts/bind.sh" "$R" b1 shop/research)
@@ -215,7 +244,7 @@ ok "the chat that left the note isn't told about it at a resume; its next messag
 hook end '{"session_id":"s1","reason":"clear"}'
 ok "once that chat ends or is cleared, the note says so" '[ "$(cut -f2- "$note")" = "s1	ended" ]'
 out=$(hook load '{"session_id":"n7","source":"clear","session_title":"shop/tickets"}')
-ok "and the next chat on the track fills the gap" '[[ "$out" == *"The last chat on this track left off on "*" with work STATE.md doesn'"'"'t have yet. Before your first reply, update its Current and Next step"* ]] && [ -f "$st/gap-n7" ]'
+ok "and the next chat on the track fills the gap" '[[ "$out" == *"The last chat on this track left off on "*" with work STATE.md doesn'"'"'t have yet. Before your first reply, update its Current and Next step"*"marking those lines [assumed], and tell the user in one line"* ]] && [ -f "$st/gap-n7" ]'
 cp "$note" "$R/note.tmp"; edit n7 Edit "$K/shop/tickets/STATE.md"
 ok "its save clears the note" '[ ! -f "$note" ] && [ ! -f "$st/gap-n7" ]'
 mv "$R/note.tmp" "$note"; sed -i '' 's/ended$/-/' "$note"; touch -t "$(mins_ago 1500)" "$note"; printf 'shop/tickets\n' > "$st/track-n8"
@@ -460,7 +489,7 @@ out=$(lp l1 "$R/l1.jsonl")
 ok "below 90% of that size, still nothing" '[ -z "$out" ]'
 tx "$R/l1.jsonl" 880000
 out=$(ctx "$(lp l1 "$R/l1.jsonl")")
-ok "at 90% the chat is offered a fresh one, with the numbers" '[[ "$out" == "This chat'"'"'s context is about 880K tokens, 90% of the 970K at which it compacts. Offer once, in one line before the rest of your reply to this message, to continue in a fresh chat: /trackside:fresh saves the track"* ]]'
+ok "at 90% the chat is offered a fresh one, with the numbers" '[[ "$out" == "This chat'"'"'s context is about 880K tokens, 90% of the 970K at which it compacts. Offer once, in one line before the rest of your reply to this message, to clear this chat and continue the track: /trackside:fresh saves the track, then clears this chat, which reloads the track"* ]]'
 ok "as a choice, with a way to keep the chat whole" '[[ "$out" == *"/trackside:whole keeps this chat as it is"* && "$out" == *"Run neither unless the user asks."* ]]'
 ok "the offers-fresh-chat eval gives its agent this same text" 'grep -qF -- "append_system_prompt: \"$out\"" "$H/evals/offers-fresh-chat/prompt.md"'
 out=$(lp l1 "$R/l1.jsonl")
@@ -570,7 +599,7 @@ cp "$J/t1.jsonl" "$J/t.jsonl"
 raw=$(printf '{"session_id":"j1","prompt":"next","transcript_path":"%s"}' "$J/t.jsonl" | CLAUDE_PROJECT_DIR="$J" "$H/hooks/bind.sh")
 out=$(jq -r .hookSpecificOutput.additionalContext <<<"$raw")
 ok "the next prompt shows what it found, to settle before the answer" '[[ "$out" == "trackside'"'"'s context check compared"*"- The chat said \"We round discounts down to whole dollars\""*"Before you answer, settle each"* ]] && [ ! -f "$js/health-j1" ]'
-ok "and shows the user the same findings as a warning, whatever the agent says" '[[ "$(jq -r .systemMessage <<<"$raw")" == "trackside'"'"'s context check: this chat'"'"'s recent replies disagree with app/main'"'"'s files:"$'"'"'\n'"'"'"- The chat said \"We round discounts down to whole dollars\""*"If the chat got it wrong, /trackside:fresh continues the track in a fresh chat." ]]'
+ok "and shows the user the same findings as a warning, whatever the agent says" '[[ "$(jq -r .systemMessage <<<"$raw")" == "trackside'"'"'s context check: this chat'"'"'s recent replies disagree with app/main'"'"'s files:"$'"'"'\n'"'"'"- The chat said \"We round discounts down to whole dollars\""*"If the chat got it wrong, /trackside:fresh saves the track, then clears this chat." ]]'
 ok "and offers a fresh chat if a reply was wrong" '[[ "$out" == *"If one was, also offer once, in one line before the rest of your reply"* ]] && [ "$(cat "$js/offered-j1")" = 0 ]'
 echo 1 > "$js/compactions-j1"; jd
 ok "it runs again after a compaction" '[ "$(runs)" = 3 ]'
@@ -678,12 +707,16 @@ out=$(gitenv bash "$H/scripts/setup-git.sh" "$G" ignore history)
 ok "running it again changes nothing" '[ -z "$out" ] && [ "$(grep -cx "/.trackside/" "$G/.git/info/exclude")" = 1 ]'
 printf -- '- a save\n' >> "$G/.trackside/app/main/STATE.md"
 gitenv bash -c 'printf "%s" "$1" | CLAUDE_PROJECT_DIR="$2" "$3/hooks/stop.sh"' _ '{"session_id":"g","stop_hook_active":false}' "$G" "$H" >/dev/null
-ok "at the end of a turn the Stop hook commits what changed in the trackside folder" '[ "$(git -C "$G/.trackside" rev-list --count HEAD)" = 2 ] && [ "$(git -C "$G/.trackside" log -1 --format=%s)" = "app/main: save" ] && [ -z "$(git -C "$G/.trackside" status --porcelain)" ]'
+ok "at the end of a turn the Stop hook commits what changed in the trackside folder" '[ "$(git -C "$G/.trackside" rev-list --count HEAD)" = 2 ] && [ "$(git -C "$G/.trackside" log -1 --format=%s)" = "save: app/main" ] && [ -z "$(git -C "$G/.trackside" status --porcelain)" ]'
 gitenv bash -c 'printf "%s" "$1" | CLAUDE_PROJECT_DIR="$2" "$3/hooks/stop.sh"' _ '{"session_id":"g","stop_hook_active":false}' "$G" "$H" >/dev/null
 ok "and nothing when nothing changed" '[ "$(git -C "$G/.trackside" rev-list --count HEAD)" = 2 ]'
+mkdir -p "$G/.trackside/lib/core"; printf 'n\n' > "$G/.trackside/lib/core/NOTES.md"; printf -- '- again\n' >> "$G/.trackside/app/main/STATE.md"
+gitenv bash -c 'printf "%s" "$1" | CLAUDE_PROJECT_DIR="$2" "$3/hooks/stop.sh"' _ '{"session_id":"g","stop_hook_active":false}' "$G" "$H" >/dev/null
+ok "a commit that takes in other tracks' changes names them all" '[ "$(git -C "$G/.trackside" log -1 --format=%s)" = "save: app/main, lib/core" ]'
+rm -rf "${G:?}/.trackside/lib"
 printf -- '- more\n' >> "$G/.trackside/app/main/STATE.md"
 gitenv bash -c 'printf "%s" "$1" | CLAUDE_PROJECT_DIR="$2" "$3/hooks/stop.sh"' _ '{"session_id":"nobody","stop_hook_active":false}' "$G" "$H" >/dev/null
-ok "an unbound chat leaves it alone" '[ "$(git -C "$G/.trackside" rev-list --count HEAD)" = 2 ]'
+ok "an unbound chat leaves it alone" '[ "$(git -C "$G/.trackside" rev-list --count HEAD)" = 3 ]'
 git -C "$G/.trackside" checkout -q -- app/main/STATE.md
 mkdir -p "$G/sub/.trackside"
 gitenv bash "$H/scripts/setup-git.sh" "$G/sub" ignore >/dev/null
@@ -1086,6 +1119,11 @@ ok "every skill pre-approves the trackside scripts and .trackside commits it run
 ok "done marks the ticket done only after the commit is approved, and stops on a failed check" 'grep -q "Until then, the ticket stays open" "$H/skills/done/SKILL.md" && grep -q "If any of them fails, report it and stop" "$H/skills/done/SKILL.md"'
 ok "next checks only the repos the ticket touches" 'grep -q "in each repo the ticket touches" "$H/skills/next/SKILL.md"'
 ok "save, and so fresh, first checks the work fits the track, asks once, and moves the chat with its work" 'grep -q "check that the work fits the track" "$H/skills/save/SKILL.md" && grep -q "ask the user once which track to save it to" "$H/skills/save/SKILL.md" && grep -q "\"<feature>/<track>\" move\`" "$H/skills/save/SKILL.md" && grep -q "checks first that this chat" "$H/skills/fresh/SKILL.md"'
+ok "fresh runs only when asked to clear, and every suggestion of it says it clears this chat" 'grep -q "says yes to a question that said plainly this chat would be cleared" "$H/skills/fresh/SKILL.md" && grep -q "Whenever you suggest it, say in the same sentence that it clears this chat" "$H/skills/fresh/SKILL.md" && grep -q "isn.t a request to clear this one" "$H/skills/fresh/SKILL.md"'
+ok "a judge finding never has the agent rewrite the track unasked" 'grep -q "say what you.d change in it and ask before editing it" "$H/hooks/bind.sh"'
+ok "the deep review applies on its own only edits inside .trackside/" 'grep -q "only in files inside \`.trackside/\`" "$H/skills/audit/SKILL.md" && grep -q "touches any file outside \`.trackside/\`" "$H/skills/audit/SKILL.md" && grep -q "lossless, only in files inside .trackside/" "$H/hooks/load.sh" && grep -q "lossless, only in files inside .trackside/" "$H/skills/start/SKILL.md"'
+ok "a rename asked in words is confirmed first, with the files outside .trackside/ it would change" 'grep -q "If the user asked in words rather than typing /trackside:rename, first confirm in one line" "$H/skills/rename/SKILL.md"'
+ok "keep-whole needs the words, and setup choices need naming one by one" 'grep -q "asks in words to keep this chat whole;" "$H/skills/whole/SKILL.md" && ! grep -q "or as it is" "$H/skills/whole/SKILL.md" && grep -q "a plain yes to the whole proposal accepts the track, not these" "$H/skills/start/SKILL.md"'
 ok "save lists what it recorded" 'grep -q "one line for each decision, Inbox line or rule you wrote" "$H/skills/save/SKILL.md"'
 ok "save and done leave the trackside folder's commit to the Stop hook" '! grep -q "git -C" "$H/skills/save/SKILL.md" && ! grep -q "git -C" "$H/skills/done/SKILL.md" && grep -q "trackside commits it at the end of the turn" "$H/skills/save/SKILL.md"'
 ok "saves are asked for in one edit, in the reload, the reminders and save" 'grep -q "in one edit (one Edit call or one script)" "$H/hooks/load.sh" && grep -q "in one edit (one Edit call or one script)" "$H/skills/save/SKILL.md" && grep -q "Make it one edit" "$H/hooks/track.sh" && grep -q "in one edit each" "$H/hooks/bind.sh"'

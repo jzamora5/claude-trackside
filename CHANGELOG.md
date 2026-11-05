@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.24.0 · 2026-11-05
+
+A chat cleared itself and came back unbound. In the desktop app, the agent asked "Start building the newcomer suite in a fresh chat?"; the user clicked "Yes, start the suite", meaning start the work, and the agent ran `/trackside:fresh`, which saved the track and cleared the chat. The work was saved and the old conversation stayed available through Resume. But the app started the cleared chat without its title, so the reload couldn't find its track, and the prompt hook never rebound from a title, so the chat lost its track.
+
+- A chat that starts unbound is rebound from its title at its first message, the way the reload would have done, and the agent is told to read the track's files and propose its next step rather than start it. Only at that first message: an independent review found that a chat the user unbinds in words still carries the track's title for a message, and would have been bound again.
+- `/trackside:fresh` runs when the user types it, asks to clear this chat, or says yes to a question that said plainly this chat would be cleared, such as trackside's offer. Every suggestion of it must say it clears this chat; "start X in a fresh chat" means a new session and clears nothing. trackside's offer and the judge's warning say "clear this chat".
+- From the same review, places trackside acted without asking:
+  - A judge finding no longer has the agent rewrite the track: it says what it would change and asks first.
+  - The deep review's "lossless" items, which the agent applies on its own, are only edits inside `.trackside/`; anything touching memory notes or a repo's `CLAUDE.md` needs the user.
+  - A rename asked for in words is confirmed in one line first, naming the files outside `.trackside/` it would change. A typed `/trackside:rename` still asks nothing.
+  - A chat that fills in another chat's unsaved work marks those lines `[assumed]` and says so in one line.
+  - The Stop hook's commit names every track that changed ("save: app/main, lib/core"), since other chats' edits can be in it.
+  - Only `/trackside:start` binds or unbinds; a bare `/start` may be another plugin's command. `/trackside:whole` no longer triggers on "keep this as it is". Each setup choice for a new `.trackside/` is made only when the user names it.
+- Evals: `fresh-chat-is-not-a-clear`; `offers-fresh-chat` also checks that the offer says it clears this chat.
+
 ## 0.23.1 · 2026-10-30
 
 - The judge checks again each time the context grows by another 200K (`TRACKSIDE_JUDGE_STEP`; 0 checks once per compaction), until the chat compacts or is offered a fresh one. 0.23.0 moved its single check per compaction to 300K, so a 1M chat was checked at 300K and then not until it compacted near 970K: past the 400–730K range where every real finding so far was made. A 1M chat now gets up to four checks, about 5K Haiku tokens each, and the chat itself spends nothing on them.

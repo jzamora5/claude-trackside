@@ -15,19 +15,32 @@ if [ -n "$given" ] && ! keep_title "$given"; then
   printf '%s\n' "$given" > "$st/name-$sid"
 fi
 title=""
-if [[ "$prompt" =~ ^/(trackside:)?start[[:space:]]+([^[:space:]]+)([[:space:]]|$) ]]; then
-  if [ "${BASH_REMATCH[2]}" = off ]; then
+if [[ "$prompt" =~ ^/trackside:start[[:space:]]+([^[:space:]]+)([[:space:]]|$) ]]; then
+  if [ "${BASH_REMATCH[1]}" = off ]; then
     # The start skill runs next and reports the unbinding, unsaved work included, from this note.
     if [ -s "$st/track-$sid" ]; then
       { cat "$st/track-$sid"; [ ! -f "$st/dirty-$sid" ] || echo unsaved; } > "$st/off-$sid"
     fi
     title=$(unbind_chat "$keep" "$sid")
     [ -z "$name" ] || map_name "$keep" "$name" off
-  elif target=$(bind_chat "$keep" "$sid" "${BASH_REMATCH[2]}"); then
+  elif target=$(bind_chat "$keep" "$sid" "${BASH_REMATCH[1]}"); then
     title="$target"
     [ -z "$name" ] || map_name "$keep" "$name" "$target"
   fi
 fi
+# The app can start a cleared chat without its title, so SessionStart found no track for it. The title arrives with
+# the first message: rebind from it the way the reload would, and have the agent read what the reload would have loaded.
+# Only at that first message: later, an unbound chat is one the user or the agent unbound, and stays so.
+rebound=""
+called="${given:-$name}"
+if [ -f "$st/pending-$sid" ] && [ -z "$title" ] && [ ! -s "$st/track-$sid" ] && [ -n "$called" ]; then
+  rb=$(chat_binding "$keep" "$sid" "$called")
+  if [ -n "$rb" ]; then
+    printf '%s\n' "$rb" > "$st/track-$sid"
+    rebound="This chat is back on its track, $rb, by its name \"$called\": the reload when it started didn't have the name yet. Before you answer, read $(rel "$keep/${rb%%/*}")/FEATURE.md, then $(rel "$keep/$rb")/CONTEXT.md and STATE.md, and if this message asks to go on, propose STATE.md's Next step and wait for the user's OK before starting it. Don't mention this unless the user asks."
+  fi
+fi
+rm -f "$st/pending-$sid"
 # A save the last turn ended without is asked for before this answer, never after the last one.
 owed=""
 b=$(cat "$st/track-$sid" 2>/dev/null || true)
@@ -49,11 +62,11 @@ if [ -n "$b" ] && [ -z "$worktree" ] && [ ! -f "$st/whole-$sid" ]; then
   c=$(compactions "$st" "$sid")
   due=""; [ "$(cat "$st/offered-$sid" 2>/dev/null)" = "$c" ] || due=1
   found=$(cat "$st/health-$sid" 2>/dev/null || true); rm -f "$st/health-$sid"
-  fresh="once, in one line before the rest of your reply to this message, to continue in a fresh chat: /trackside:fresh saves the track and clears this chat, which then reloads the track; /trackside:whole keeps this chat as it is with no more offers, for a chat to keep complete, such as for an audit; otherwise trackside asks again after the next compaction. Run neither unless the user asks."
+  fresh="once, in one line before the rest of your reply to this message, to clear this chat and continue the track: /trackside:fresh saves the track, then clears this chat, which reloads the track; /trackside:whole keeps this chat as it is with no more offers, for a chat to keep complete, such as for an audit; otherwise trackside asks again after the next compaction. Run neither unless the user asks."
   if [ -n "$found" ]; then
     # The agent doesn't always say so, so the user sees the findings too.
-    warn="trackside's context check: this chat's recent replies disagree with $b's files:"$'\n'"$found"$'\n'"If the chat got it wrong, /trackside:fresh continues the track in a fresh chat."
-    offer="trackside's context check compared this chat's recent replies with the track's files and found these disagreements:"$'\n'"$found"$'\n'"Before you answer, settle each: if the track is out of date, update it; if a reply of yours was wrong, say so in a line before the rest of your reply."
+    warn="trackside's context check: this chat's recent replies disagree with $b's files:"$'\n'"$found"$'\n'"If the chat got it wrong, /trackside:fresh saves the track, then clears this chat."
+    offer="trackside's context check compared this chat's recent replies with the track's files and found these disagreements:"$'\n'"$found"$'\n'"Before you answer, settle each in a line before the rest of your reply: if a reply of yours was wrong, say so; if the track looks out of date, say what you'd change in it and ask before editing it, since it holds decisions the user made."
     [ -z "$due" ] || offer+=" If one was, also offer $fresh"
   elif [ -n "$due" ] && size_due "$st" "$sid" "${tokens:-}" "${model:-}"; then
     if [[ "${tokens:-}" =~ ^[0-9]+$ ]] && [ "$tokens" -gt 0 ]; then
@@ -68,7 +81,8 @@ if [ -n "$b" ] && [ -z "$worktree" ] && [ ! -f "$st/whole-$sid" ]; then
   fi
   [ -z "$offer" ] || [ -z "$due" ] || echo "$c" > "$st/offered-$sid"
 fi
-context="$owed"
+context="$rebound"
+[ -z "$owed" ] || context="${context:+$context$'\n'}$owed"
 [ -z "$offer" ] || context="${context:+$context$'\n'}$offer"
 # trackside never renames a chat the user named. Only this hook and SessionStart can name a chat, so scripts/bind.sh
 # leaves the name here for the next prompt.

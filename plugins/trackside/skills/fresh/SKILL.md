@@ -1,6 +1,6 @@
 ---
 name: fresh
-description: Continue this chat's track in a fresh chat (the user may call a track a workspace): save the track, then clear this chat, which reloads the track on its own. Run it when the user types /trackside:fresh, asks for a fresh or cleared chat on the same track, or takes trackside's offer of one; never on your own.
+description: Clear this chat and continue its track (the user may call a track a workspace): save the track, then clear this chat, which reloads the track on its own. Run it when the user types /trackside:fresh, asks in words to clear this chat, or says yes to a question that said plainly this chat would be cleared, such as trackside's own offer. Whenever you suggest it, say in the same sentence that it clears this chat. Starting work "in a fresh chat" or "in a new chat" isn't a request to clear this one. Never on your own.
 ---
 If `${CLAUDE_PROJECT_DIR}` has no `.trackside/` folder, which happens when a chat moves to another folder after it starts, use the nearest folder at or above the current one that has a `.trackside/` wherever this says `${CLAUDE_PROJECT_DIR}`.
 

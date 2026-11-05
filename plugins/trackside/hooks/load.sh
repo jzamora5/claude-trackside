@@ -28,6 +28,8 @@ fi
 # are kept: they matter most after a long pause, and closing a track removes its own.
 find "$st" -type f ! -name .gitignore ! -name 'stamp-*' ! -name 'deep-*' ! -name 'named-*' ! -name 'whole-*' ! -name 'limit-*' -mtime +"${TRACKSIDE_STATE_DAYS:-30}" -exec rm -f {} + 2>/dev/null
 [ -n "$binding" ] && printf '%s\n' "$binding" > "$st/track-$sid"
+# A chat that starts unbound may only lack its title: the prompt hook may rebind it at its first message, never later.
+if [ -n "$binding" ]; then rm -f "$st/pending-$sid"; else touch "$st/pending-$sid"; fi
 bash "$here/../scripts/index.sh" "$root" 2>/dev/null
 
 if [ -z "$binding" ] || [ ! -f "$keep/$binding/STATE.md" ]; then
@@ -62,7 +64,7 @@ if [ -s "$note" ] && [ -z "$worktree" ]; then
   IFS=$'\t' read -r when who how < "$note"
   if [ "${who:-}" != "$sid" ]; then
     if [ -z "${who:-}" ] || [ "${how:-}" = ended ] || [ -n "$(find "$note" -mmin +1440 2>/dev/null)" ]; then
-      add "The last chat on this track left off on $when with work STATE.md doesn't have yet. Before your first reply, update its Current and Next step from what changed (below) and the code, without mentioning it."
+      add "The last chat on this track left off on $when with work STATE.md doesn't have yet. Before your first reply, update its Current and Next step from what changed (below) and the code, marking those lines [assumed], and tell the user in one line that you filled in work the last chat left unsaved."
       touch "$st/gap-$sid"
     else
       add "Another chat on this track, still open, has work STATE.md doesn't have yet (its last turn ended $when). It saves that work at its next message, so don't fill it in from here."
@@ -97,7 +99,7 @@ if [ -z "$worktree" ]; then
   fi
   if [ "$(bash "$here/../scripts/audit.sh" "$root" "$binding" due 2>/dev/null)" = due ]; then
     add ""
-    add "trackside's periodic review of this track is due. Start the trackside audit skill for $binding now, without waiting for the user; it runs in the background on a cheaper model and reads only. When its list comes back, apply the items it marks lossless, write the other items to the track's review-<date>.md (or \"Nothing needs the user.\"; writing the file marks the review as handled) with an Inbox line pointing to it when it has items, and show the user the other items once, at a natural pause."
+    add "trackside's periodic review of this track is due. Start the trackside audit skill for $binding now, without waiting for the user; it runs in the background on a cheaper model and reads only. When its list comes back, apply the items it marks lossless, only in files inside .trackside/, write the other items to the track's review-<date>.md (or \"Nothing needs the user.\"; writing the file marks the review as handled) with an Inbox line pointing to it when it has items, and show the user the other items once, at a natural pause."
   fi
 fi
 out+="$(reload_files "$keep" "$binding" $(( budget - $(bytes "$out") - 200 )))"$'\n'

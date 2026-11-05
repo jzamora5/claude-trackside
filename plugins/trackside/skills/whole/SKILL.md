@@ -1,6 +1,6 @@
 ---
 name: whole
-description: Keep this chat whole, such as for an audit: trackside stops offering to continue it in a fresh chat and stops checking it. Run it when the user types /trackside:whole or asks to keep this chat whole or as it is; /trackside:whole off undoes it.
+description: Keep this chat whole, such as for an audit: trackside stops offering to continue it in a fresh chat and stops checking it. Run it when the user types /trackside:whole or asks in words to keep this chat whole; /trackside:whole off undoes it.
 allowed-tools: Bash(bash "${CLAUDE_SKILL_DIR}/../../scripts/whole.sh" *)
 ---
 If `${CLAUDE_PROJECT_DIR}` has no `.trackside/` folder, which happens when a chat moves to another folder after it starts, use the nearest folder at or above the current one that has a `.trackside/` wherever this says `${CLAUDE_PROJECT_DIR}`.
