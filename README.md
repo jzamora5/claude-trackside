@@ -108,9 +108,9 @@ Saving STATE.md outside a skill is a normal file edit, so with default permissio
 }
 ```
 
-## trackside and spec-driven development
+## trackside and spec-driven development (SDD)
 
-Spec-driven development, with tools such as OpenSpec or Spec Kit, makes the spec the source of truth. You agree on what to build and why, the agent turns the spec into a plan and tasks, and code follows. trackside isn't one of those tools: it doesn't write the spec, turn it into plans and tasks, or decide what gets built. It only keeps a spec current: when a finished ticket makes part of it outdated, `/trackside:done` updates that part, in the change you approve.
+Spec-driven development (SDD), with tools such as OpenSpec or Spec Kit, makes the spec the source of truth. You agree on what to build and why, the agent turns the spec into a plan and tasks, and code follows. trackside isn't one of those tools: it doesn't write the spec, turn it into plans and tasks, or decide what gets built. It only keeps a spec current: when a finished ticket makes part of it outdated, `/trackside:done` updates that part, in the change you approve.
 
 It covers what a spec leaves out on purpose: where the work stands right now. That means the branch, what's half-done, what was decided while building, what was tried and failed, and what's waiting on someone. That state changes every hour, belongs to the people and agents doing the work, and would only clutter a spec.
 
