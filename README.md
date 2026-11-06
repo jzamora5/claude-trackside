@@ -108,10 +108,29 @@ Saving STATE.md outside a skill is a normal file edit, so with default permissio
 }
 ```
 
-## How it compares
+## trackside and spec-driven development
 
-- **Spec-driven tools** such as OpenSpec or Spec Kit agree on *what to build* before code is written. trackside covers the *work in progress*: where each line of work stands right now. The two fit together; a feature can plan its tickets with OpenSpec.
-- **Session handoff tools** write a summary when you ask for one, for one session or one repo. trackside saves while the chat works, organizes chats by feature, and checks the state against the repos before a new chat trusts it.
+Spec-driven development, with tools such as OpenSpec or Spec Kit, makes the spec the source of truth. You agree on what to build and why, the agent turns the spec into a plan and tasks, and code follows. trackside isn't one of those tools: it doesn't write the spec, turn it into plans and tasks, or decide what gets built. It only keeps a spec current: when a finished ticket makes part of it outdated, `/trackside:done` updates that part, in the change you approve.
+
+It covers what a spec leaves out on purpose: where the work stands right now. That means the branch, what's half-done, what was decided while building, what was tried and failed, and what's waiting on someone. That state changes every hour, belongs to the people and agents doing the work, and would only clutter a spec.
+
+| | A spec | trackside's state |
+| --- | --- | --- |
+| Answers | What to build, and why | Where the work stands, and what comes next |
+| Changes | When the plan changes, through review | Every working session, on its own |
+| Read by | The team, reviewers, the agent | The next chat that picks up the work |
+| Lives | Next to the code, versioned and reviewed | In `.trackside/`, local to your project |
+
+The two work together:
+
+- **The spec stays the source of truth.** A feature's `FEATURE.md` points to its specs, RFCs or design docs instead of copying them. Before relying on what they say, the agent reads the exact text with `/trackside:lookup`, and each new chat is told which sections changed since the last save.
+- **Decisions go where you say.** Decisions made during the work are recorded where `FEATURE.md` names, which can be a section of the spec itself. A later chat finds them and doesn't propose rejected options again.
+- **It works with OpenSpec.** If `FEATURE.md` says the feature plans with OpenSpec, `/trackside:next` drafts each ticket's plan with OpenSpec's propose step, and `/trackside:done` archives the change once it's merged.
+- **It also works without a spec tool.** Any document can be the source, from an RFC to a PRD or a plain design doc.
+
+## How it compares to handoff tools
+
+Session handoff tools write a summary when you ask for one, for one session or one repo. trackside saves while the chat works, organizes chats by feature, and checks the state against the repos before a new chat trusts it.
 
 ## Status
 
