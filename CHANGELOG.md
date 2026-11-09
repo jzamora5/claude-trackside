@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.25.0 · 2026-11-09
+
+From a comparison with specbaton, a teammate's plugin. Its ideas were checked in three passes: evidence from real use, clashes with trackside's design and costs, and an independent adversarial review. Three held up.
+
+- The Stop hook leaves the unsaved-work note naming the chat whenever a turn ends with unsaved work, not only once a save is due. Before, a chat that worked for a few minutes and went quiet left nothing, so a second chat on the track wasn't told and could redo or overwrite that work. The save request still waits until a save is due. A second chat is told the first "saves that work itself" instead of "at its next message", which wasn't always true.
+- Right after a compaction, a chat with unsaved work updates STATE.md in one edit and records any decision or ruled-out option the summary holds that the track doesn't. That's the cheapest save in a long chat, since the context just shrank, and the summary is the last place those decisions still exist. From specbaton's after-compaction hook.
+- The judge's `claude -p` call adds `--disallowedTools "mcp__*"`: Claude Code's docs say `--tools` doesn't remove MCP tools, and specbaton found an MCP server that connects on its own despite `--strict-mcp-config`.
+
+Considered and dropped:
+- **specbaton's learning from human PR comments, as plugin code:** the comments are handled on feature tracks, nothing would trigger it on the review track, it would count the user's own posted reviews as teammates' finds, and the lessons file is already full.
+- **A "proposed until accepted" decision state:** no feature here uses DECISIONS.md, and the user's standing rule is to update their RFC without a confirmation round.
+- **Saving on goodbye:** goodbye phrases matched once across about 1,800 prompts, and that match was a false positive.
+- **An update check:** nothing to offer, and remembered refusals would nag or need lasting state.
+
 ## 0.24.0 · 2026-11-05
 
 A chat cleared itself and came back unbound. In the desktop app, the agent asked "Start building the newcomer suite in a fresh chat?"; the user clicked "Yes, start the suite", meaning start the work, and the agent ran `/trackside:fresh`, which saved the track and cleared the chat. The work was saved and the old conversation stayed available through Resume. But the app started the cleared chat without its title, so the reload couldn't find its track, and the prompt hook never rebound from a title, so the chat lost its track.

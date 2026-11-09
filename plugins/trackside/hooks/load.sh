@@ -67,7 +67,7 @@ if [ -s "$note" ] && [ -z "$worktree" ]; then
       add "The last chat on this track left off on $when with work STATE.md doesn't have yet. Before your first reply, update its Current and Next step from what changed (below) and the code, marking those lines [assumed], and tell the user in one line that you filled in work the last chat left unsaved."
       touch "$st/gap-$sid"
     else
-      add "Another chat on this track, still open, has work STATE.md doesn't have yet (its last turn ended $when). It saves that work at its next message, so don't fill it in from here."
+      add "Another chat on this track, still open, has work STATE.md doesn't have yet (its last turn ended $when). It saves that work itself, so don't fill it in from here."
     fi
   fi
 fi
@@ -85,6 +85,11 @@ if [ "$src" = "compact" ]; then
   echo "$n" > "$st/compactions-$sid"
   add "This chat has been compacted $n time(s); the track's files reloaded with this are authoritative over the summary."
   add "Re-read the files FEATURE.md and CONTEXT.md list under \"Read on start\"; the summary may have dropped them."
+  # Right after a compaction the context is at its smallest, so a save costs the least it ever will in this chat, and
+  # the summary is the last place this session's recent decisions still exist.
+  if [ -f "$st/dirty-$sid" ] && [ -z "$worktree" ]; then
+    add "This chat has work STATE.md doesn't have yet. Before you go on, update its Current and Next step in one edit, from the summary and the code, and record any decision or ruled-out option the summary holds that the track doesn't, without mentioning it."
+  fi
 fi
 
 add ""

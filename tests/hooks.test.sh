@@ -227,6 +227,7 @@ ok "a chat that hasn't saved yet owes a save after its first working turn" 'owed
 edit s1 Edit "$K/shop/tickets/STATE.md"; edit s1 Edit "$R/api/cart.js"
 ok "(setup) saving starts this chat's own clock" '[ -f "$st/saved-s1" ] && [ -f "$st/dirty-s1" ]'
 ok "it waits while this chat saved in the last 15 minutes" '! owed s1 && [ -f "$st/dirty-s1" ]'
+ok "but leaves the note naming this chat on the track even before a save is due" '[ "$(cut -f2- "$st/stamp-shop@tickets.unsaved")" = "s1	-" ] && [ ! -f "$st/owed-s1" ]'
 ok "TRACKSIDE_SAVE_MINUTES=0 asks after every working turn" 'TRACKSIDE_SAVE_MINUTES=0 owed s1'
 mins_ago() { date -v-"$1"M +%Y%m%d%H%M 2>/dev/null || date -d "$1 minutes ago" +%Y%m%d%H%M; }
 touch -t "$(mins_ago 20)" "$st/saved-s1"
@@ -350,6 +351,12 @@ ok "a bound chat is told to keep the bookkeeping out of its replies" '[[ "$out" 
 rm -f "$st"/*-v1
 
 echo "--- compaction and /clear"
+printf 'shop/tickets\n' > "$st/track-cp1"; touch "$st/dirty-cp1"
+out=$(hook load '{"session_id":"cp1","source":"compact"}')
+ok "right after a compaction, a chat with unsaved work saves it, and the decisions the summary still holds" '[[ "$out" == *"This chat has work STATE.md doesn'"'"'t have yet. Before you go on, update its Current and Next step in one edit, from the summary and the code, and record any decision or ruled-out option the summary holds"* ]]'
+rm -f "$st/dirty-cp1"; out=$(hook load '{"session_id":"cp1","source":"compact"}')
+ok "one with nothing unsaved isn't asked" '[[ "$out" == *"compacted 2 time"* && "$out" != *"This chat has work STATE.md"* ]]'
+rm -f "${st:?}"/*-cp1
 out=$(hook load '{"session_id":"s1","source":"compact"}')
 ok "the first compaction is counted" '[[ "$out" == *"compacted 1 time"* && "$out" == *"Read on start"* && "$out" != *"/trackside:save"* ]]'
 out=$(hook load '{"session_id":"s1","source":"compact"}')
@@ -581,7 +588,7 @@ chmod +x "$J/bin/claude"
 jd() { printf '{"session_id":"j1","transcript_path":"%s","last_assistant_message":"Done, it floors now."}' "$J/t.jsonl" | PATH="$J/bin:$PATH" CLAUDE_PROJECT_DIR="$J" "$H/hooks/judge.sh"; }
 runs() { cat "$J/bin/runs" 2>/dev/null || echo 0; }
 jd
-ok "past 300K tokens the judge runs as its own Claude Code process, without tools, settings or a saved session" '[ "$(runs)" = 1 ] && [ "$(cat "$J/bin/child")" = 1 ] && [[ "$(cat "$J/bin/args")" == "-p --model haiku --tools  --strict-mcp-config --no-session-persistence --disable-slash-commands --setting-sources  --system-prompt-file $H/hooks/judge.md" ]]'
+ok "past 300K tokens the judge runs as its own Claude Code process, without tools, settings or a saved session" '[ "$(runs)" = 1 ] && [ "$(cat "$J/bin/child")" = 1 ] && [[ "$(cat "$J/bin/args")" == "-p --model haiku --tools  --disallowedTools mcp__* --strict-mcp-config --no-session-persistence --disable-slash-commands --setting-sources  --system-prompt-file $H/hooks/judge.md" ]]'
 ok "it reads the track's files, the feature's decisions and the chat's words, with the reply that just ended, and no tool output or notices" 'grep -q "^=== FILE STATE.md ===" "$J/bin/stdin" && grep -q "^=== FILE DECISIONS.md ===" "$J/bin/stdin" && grep -q "^USER: Which rounding" "$J/bin/stdin" && grep -q "^ASSISTANT: We round discounts" "$J/bin/stdin" && grep -q "^ASSISTANT: Done, it floors now." "$J/bin/stdin" && ! grep -q "TOOL OUTPUT" "$J/bin/stdin" && ! grep -q NOTICE "$J/bin/stdin"'
 ok "only a finding quoting the chat's replies and the file it names word for word is kept" '[ "$(grep -c "" "$js/health-j1")" = 2 ] && [ "$(head -1 "$js/health-j1")" = "- The chat said \"We round discounts down to whole dollars\"; STATE.md says \"discounts round to the nearest cent, never to whole dollars\" (floor vs cents)" ] && grep -q "; DECISIONS.md says \"Rejected: storing totals as floats, because cents drift\"" "$js/health-j1"'
 ok "its log counts what it found and keeps none of the chat's words" '[[ "$(cat "$js/judge-log")" == *"	app/main	m-1	500000	found 4	kept 2" ]] && ! grep -q round "$js/judge-log"'

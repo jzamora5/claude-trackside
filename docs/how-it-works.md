@@ -62,7 +62,7 @@ Several chats can work on one feature at once, on tickets, a research topic or r
 
 A shell command that changes the track's own `STATE.md` counts as a save; one that only reads it doesn't.
 
-**When a turn ends unsaved.** trackside doesn't send the chat back after its reply, so nothing lands after a reply you're reading. Instead, your next message starts with the request, before its answer. Meanwhile the chat leaves a note on the track, naming itself.
+**When a turn ends unsaved.** trackside doesn't send the chat back after its reply, so nothing lands after a reply you're reading. Instead, your next message starts with the request, before its answer. Whenever a turn ends with unsaved work, even before a save is due, the chat leaves a note on the track, naming itself.
 - Another chat opened on that track while the first is still open is told to leave that work to it.
 - Once the first chat ends or is cleared, or leaves the note for a day, the next chat on the track is told the last one left off with unsaved work. It fills the gap from the code and git, marks those lines `[assumed]`, and tells you in one line.
 
@@ -74,7 +74,7 @@ A shell command that changes the track's own `STATE.md` counts as a save; one th
 
 ## Reloading
 
-**When it reloads.** `/clear`, a resume or a compaction reloads the feature and the track on their own. If the app starts a cleared chat without its title, trackside puts the chat back on its track at your first message, by its name. That happens only at the first message, so a chat you unbind on purpose stays unbound.
+**When it reloads.** `/clear`, a resume or a compaction reloads the feature and the track on their own. If the app starts a cleared chat without its title, trackside puts the chat back on its track at your first message, by its name. That happens only at the first message, so a chat you unbind on purpose stays unbound. Right after a compaction, a chat with unsaved work saves it, and records any decision or ruled-out option the summary holds that the track doesn't: the context is at its smallest then, so the save costs the least, and the summary is the last place those decisions still exist.
 
 **Staying under the limit.** Claude Code caps each hook's output at 10,000 characters, so the reload comes in two outputs:
 - `STATE.md` in one of its own, with `LESSONS.md` after it on a track whose items start clean;
@@ -107,7 +107,7 @@ Any suggestion of it says that it clears the chat. A request to start work "in a
 **The judge.** Anthropic's docs say accuracy and recall degrade as a context grows, but nobody publishes by how much for current models at a given size, so trackside checks rather than assumes.
 - **When it runs:** once a chat passes 300K tokens (`TRACKSIDE_JUDGE_TOKENS`), and again every 200K more (`TRACKSIDE_JUDGE_STEP`), until the chat compacts or is offered a fresh start.
 - **What it does:** a cheaper model (Haiku) compares the chat's last 20 messages, without tool output, with the track's `FEATURE.md`, `CONTEXT.md`, `LESSONS.md` and `STATE.md` and the feature's `DECISIONS.md`. Each file is cut at 40 KB. Because it reads the decisions, it also catches an option the decisions rejected coming back.
-- **What it costs:** it runs in the background after a reply ends, as its own Claude Code process, so the chat spends nothing on it. Each run is about 5K tokens on the tracks it was tried on, at most about 20K, and takes a few seconds.
+- **What it costs:** it runs in the background after a reply ends, as its own Claude Code process with no tools, MCP tools included, so the chat spends nothing on it. Each run is about 5K tokens on the tracks it was tried on, at most about 20K, and takes a few seconds.
 - **What counts as a finding:** only one whose quotes appear word for word in the chat's replies and in the file it names.
 
 Your next message brings what it found, shown to you as a warning as well as to the agent:

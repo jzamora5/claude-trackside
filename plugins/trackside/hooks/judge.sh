@@ -46,7 +46,8 @@ jq -r 'select(.r == "ASSISTANT") | .x' "$w/messages" | norm > "$w/said"
   printf '=== CHAT ===\n'
   jq -r '"\(.r): \(.x)\n"' "$w/messages"
 } > "$w/prompt"
-out=$(cd "$w" && TRACKSIDE_CHILD=1 "$cli" -p --model "${TRACKSIDE_JUDGE_MODEL:-haiku}" --tools "" --strict-mcp-config \
+# --tools "" doesn't remove MCP tools, and an MCP server can connect on its own despite --strict-mcp-config.
+out=$(cd "$w" && TRACKSIDE_CHILD=1 "$cli" -p --model "${TRACKSIDE_JUDGE_MODEL:-haiku}" --tools "" --disallowedTools "mcp__*" --strict-mcp-config \
   --no-session-persistence --disable-slash-commands --setting-sources "" --system-prompt-file "$here/judge.md" \
   < "$w/prompt" 2>/dev/null)
 

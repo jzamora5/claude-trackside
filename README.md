@@ -134,7 +134,7 @@ Session handoff tools write a summary when you ask for one, for one session or o
 
 ## Status
 
-Version 0.24.0, early ([changelog](CHANGELOG.md)). Until 0.15.0 the plugin was called keep; two other Claude Code plugins use that name, and Claude Code runs the hooks of only one enabled plugin per name.
+Version 0.25.0, early ([changelog](CHANGELOG.md)). Until 0.15.0 the plugin was called keep; two other Claude Code plugins use that name, and Claude Code runs the hooks of only one enabled plugin per name.
 
 - **Hooks and scripts:** tested with simulated hook inputs (`bash tests/hooks.test.sh`) on macOS's bash 3.2.
 - **Agent behavior:** 30 behaviors are checked in real headless sessions with `claude plugin eval` (`bash tests/evals.sh`, cases in `plugins/trackside/evals/`).
@@ -159,6 +159,7 @@ Other sources:
 - The handoff check, a reader with no memory of the chat checking what it left behind, follows the Goldfish reviewers of [google/elephant-goldfish-model](https://github.com/google/elephant-goldfish-model).
 - Weighing each subagent against a skill in the main chat, and keeping it only when an eval says so, follows Anthropic's [When to fold subagents into your main agent loop](https://claude.com/resources/articles/building-agents-when-to-fold-subagents-into-your-main-agent-loop).
 - Offering to clear a chat before quality drops, and checking a long chat against its notes rather than assuming it drifted, follows Chroma's [Context Rot](https://research.trychroma.com/context-rot) report and Anthropic's [context windows](https://platform.claude.com/docs/en/build-with-claude/context-windows) docs.
+- Saving right after a compaction, while the summary still holds the session's decisions, comes from the after-compaction hook of [cvillanueva84/specbaton](https://github.com/cvillanueva84/specbaton).
 - The approach follows Anthropic's [Effective harnesses for long-running agents](https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents).
 
 ## License
