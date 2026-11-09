@@ -29,15 +29,23 @@ if [[ "$prompt" =~ ^/trackside:start[[:space:]]+([^[:space:]]+)([[:space:]]|$) ]
   fi
 fi
 # The app can start a cleared chat without its title, so SessionStart found no track for it. The title arrives with
-# the first message: rebind from it the way the reload would, and have the agent read what the reload would have loaded.
-# Only at that first message: later, an unbound chat is one the user or the agent unbound, and stays so.
+# the first message: rebind from it, and give the agent the reload it would have had (gaps to fill, other open chats,
+# worktree, doc changes), with STATE.md to read. Only at that first message, and not when the message is itself a
+# /trackside:start, which binds or unbinds on its own.
 rebound=""
 called="${given:-$name}"
-if [ -f "$st/pending-$sid" ] && [ -z "$title" ] && [ ! -s "$st/track-$sid" ] && [ -n "$called" ]; then
+if [ -f "$st/pending-$sid" ] && [ -z "$title" ] && [ ! -s "$st/track-$sid" ] && [ -n "$called" ] \
+  && [[ "$prompt" != /trackside:start* ]]; then
   rb=$(chat_binding "$keep" "$sid" "$called")
   if [ -n "$rb" ]; then
-    printf '%s\n' "$rb" > "$st/track-$sid"
-    rebound="This chat is back on its track, $rb, by its name \"$called\": the reload when it started didn't have the name yet. Before you answer, read $(rel "$keep/${rb%%/*}")/FEATURE.md, then $(rel "$keep/$rb")/CONTEXT.md and STATE.md, and if this message asks to go on, propose STATE.md's Next step and wait for the user's OK before starting it. Don't mention this unless the user asks."
+    reload=$(jq -n -c --arg s "$sid" --arg t "$called" --arg c "$(field .cwd)" '{session_id: $s, source: "clear", session_title: $t, cwd: $c}' \
+      | "$(dirname "$0")/load.sh" 2>/dev/null)
+    files="$(rel "$keep/$rb")/STATE.md"
+    starts_clean "$keep" "$rb" && files="$files and LESSONS.md"
+    rebound="This chat is back on its track, $rb, by its name \"$called\": the app started it without its name, so this is the reload it would have had. Before you answer, read $files, and if this message asks to go on, propose STATE.md's Next step and wait for the user's OK before starting it. Don't mention this unless the user asks."$'\n'"$reload"
+    if [ "$(bytes "$rebound")" -gt "$cut_over" ]; then
+      rebound="$(printf '%s' "$rebound" | lines_within "$cut_to")"$'\n'"[Cut to stay under the hook output limit: read $(rel "$keep/$rb")/CONTEXT.md in full.]"
+    fi
   fi
 fi
 rm -f "$st/pending-$sid"

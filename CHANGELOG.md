@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.25.1 · 2026-11-09
+
+Fixes from a three-pass audit of 0.24.0 and 0.25.0 (journeys replayed through the real hooks, the docs checked against the code, and an independent review). Every defect was reproduced first.
+
+- A chat the app starts without its title, as after a desktop clear, now gets the whole reload when it's rebound at its first message: a gap another chat left to fill, other open chats, the worktree notice, changed doc sections and the rules. Before, it was only told to read the track's files, so a gap could be lost and a later chat would write `[assumed]` lines over real state. The rebind happens only after the app starts a chat (start, `/clear`, fork), never after a compaction or resume, and not when the first message is a `/trackside:start` of its own.
+- The unsaved-work note has one line per chat. Before, one chat's turn overwrote another's note, and its save deleted it, so a third chat wasn't told about the first chat's work. A save removes only its own line, plus the lines of ended or day-old chats it was asked to fill in.
+- Resuming a chat that has a line in the note makes its save due again, and marks it open, so other chats leave its work to it.
+- Unbinding removes the chat's line from the note, and is remembered for that chat (`unbound-<session>`), so a compaction or resume before the app shows the "(unbound)" name doesn't rebind it. Binding again clears that. Unbinding in words followed straight away by `/clear` can still rebind, since the new chat can't see the old one's records; the docs say to type `/trackside:start off` in that case.
+- After a compaction that asks for a save, the next message doesn't ask for the same save again.
+- Docs: the save request comes only once a save is due; the commit message names tracks and feature folders; the rebind's limits. Manual checklist rows 10, 35 and 38 match today's behavior.
+
 ## 0.25.0 · 2026-11-09
 
 From a comparison with specbaton, a teammate's plugin. Its ideas were checked in three passes: evidence from real use, clashes with trackside's design and costs, and an independent adversarial review. Three held up.

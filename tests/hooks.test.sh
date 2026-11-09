@@ -67,7 +67,7 @@ hook load '{"session_id":"rb1","source":"startup"}' >/dev/null
 ok "a chat that starts unbound is marked for one rebind at its first message" '[ -f "$st/pending-rb1" ]'
 for s in rb2 rb3 rb4 rb5 rb6; do touch "$st/pending-$s"; done
 out=$(hook bind '{"session_id":"rb1","prompt":"continue","session_title":"My research chat"}')
-ok "a chat that started unbound is put back on its track from its name at the first message" '[ "$(cat "$st/track-rb1" 2>/dev/null)" = shop/research ] && [[ "$(jq -r .hookSpecificOutput.additionalContext <<<"$out")" == "This chat is back on its track, shop/research, by its name \"My research chat\""*"read .trackside/shop/FEATURE.md, then .trackside/shop/research/CONTEXT.md and STATE.md"*"propose STATE.md'"'"'s Next step and wait for the user'"'"'s OK"* ]] && [ ! -f "$st/pending-rb1" ]'
+ok "a chat that started unbound is put back on its track from its name at the first message" '[ "$(cat "$st/track-rb1" 2>/dev/null)" = shop/research ] && [[ "$(jq -r .hookSpecificOutput.additionalContext <<<"$out")" == "This chat is back on its track, shop/research, by its name \"My research chat\": the app started it without its name, so this is the reload it would have had. Before you answer, read .trackside/shop/research/STATE.md"*"propose STATE.md'"'"'s Next step and wait for the user'"'"'s OK"*"Active track: shop/research"* ]] && [ ! -f "$st/pending-rb1" ]'
 out=$(hook bind '{"session_id":"rb2","prompt":"go on","session_title":"shop/tickets"}')
 ok "so is one named after its track" '[ "$(cat "$st/track-rb2" 2>/dev/null)" = shop/tickets ]'
 out=$(hook bind '{"session_id":"rb3","prompt":"hi","session_title":"Left alone"}')
@@ -85,7 +85,21 @@ hook bind '{"session_id":"rb8","prompt":"/trackside:start shop/tickets"}' >/dev/
 bash "$H/scripts/bind.sh" "$R" rb8 off >/dev/null
 out=$(hook bind '{"session_id":"rb8","prompt":"thanks","session_title":"shop/tickets"}')
 ok "so a chat unbound by asking in words stays unbound while the app still shows the track as its title" '[ ! -f "$st/track-rb8" ] && [[ "$out" != *"back on its track"* ]]'
-rm -f "${st:?}"/*-rb[0-9]
+printf '2026-11-01 10:00\tgone\tended\t%s\n' "$(date +%s)" > "$st/stamp-shop@research.unsaved"; touch "$st/pending-rb9"
+out=$(hook bind '{"session_id":"rb9","prompt":"go on","session_title":"My research chat"}')
+ok "the rebound chat gets the whole reload, such as the gap a chat that ended left" '[[ "$(jq -r .hookSpecificOutput.additionalContext <<<"$out")" == *"The last chat on this track left off on 2026-11-01 10:00"* ]] && [ -f "$st/gap-rb9" ]'
+rm -f "$st/stamp-shop@research.unsaved"; touch "$st/pending-rb10"
+out=$(hook bind '{"session_id":"rb10","prompt":"/trackside:start off","session_title":"My research chat"}')
+ok "a first message that is /trackside:start itself isn't rebound first" '[ ! -f "$st/track-rb10" ] && [[ "$out" != *"back on its track"* ]]'
+hook load '{"session_id":"rb11","source":"compact"}' >/dev/null
+ok "a compaction or resume of an unbound chat doesn't mark it for a rebind" '[ ! -f "$st/pending-rb11" ]'
+hook bind '{"session_id":"rb12","prompt":"/trackside:start shop/research"}' >/dev/null; bash "$H/scripts/bind.sh" "$R" rb12 off >/dev/null
+hook load '{"session_id":"rb12","source":"compact","session_title":"shop/research"}' >/dev/null
+hook bind '{"session_id":"rb12","prompt":"go on","session_title":"shop/research"}' >/dev/null
+ok "a chat unbound in words stays unbound through a compaction while the app still shows the track as its title" '[ ! -f "$st/track-rb12" ]'
+bash "$H/scripts/bind.sh" "$R" rb12 shop/research >/dev/null
+ok "binding it again clears that" '[ ! -f "$st/unbound-rb12" ] && [ "$(cat "$st/track-rb12")" = shop/research ]'
+rm -f "${st:?}"/*-rb[0-9] "${st:?}"/*-rb1[0-9]
 (. "$H/scripts/common.sh"; rm -f "$(name_file "$K" "My research chat")" "$(name_file "$K" "Left alone")")
 
 echo "--- binding from the start skill"
@@ -227,33 +241,57 @@ ok "a chat that hasn't saved yet owes a save after its first working turn" 'owed
 edit s1 Edit "$K/shop/tickets/STATE.md"; edit s1 Edit "$R/api/cart.js"
 ok "(setup) saving starts this chat's own clock" '[ -f "$st/saved-s1" ] && [ -f "$st/dirty-s1" ]'
 ok "it waits while this chat saved in the last 15 minutes" '! owed s1 && [ -f "$st/dirty-s1" ]'
-ok "but leaves the note naming this chat on the track even before a save is due" '[ "$(cut -f2- "$st/stamp-shop@tickets.unsaved")" = "s1	-" ] && [ ! -f "$st/owed-s1" ]'
+ok "but leaves the note naming this chat on the track even before a save is due" '[ "$(cut -f2,3 "$st/stamp-shop@tickets.unsaved")" = "s1	-" ] && [ ! -f "$st/owed-s1" ]'
 ok "TRACKSIDE_SAVE_MINUTES=0 asks after every working turn" 'TRACKSIDE_SAVE_MINUTES=0 owed s1'
 mins_ago() { date -v-"$1"M +%Y%m%d%H%M 2>/dev/null || date -d "$1 minutes ago" +%Y%m%d%H%M; }
 touch -t "$(mins_ago 20)" "$st/saved-s1"
 ok "TRACKSIDE_SAVE_MINUTES moves the wait" '! TRACKSIDE_SAVE_MINUTES=30 owed s1'
 hook bind '{"session_id":"s10","prompt":"/trackside:start shop/tickets"}' >/dev/null; edit s10 Edit "$K/shop/tickets/STATE.md"
 ok "another chat saving the same track doesn't silence this one" 'owed s1'; rm -f "$st/track-s10" "$st/saved-s10"
-ok "the Stop hook adds nothing after the reply, and leaves a note on the track naming the chat" '[ -z "$(stop s1 false)" ] && [ "$(cut -f2- "$st/stamp-shop@tickets.unsaved")" = "s1	-" ]'
+ok "the Stop hook adds nothing after the reply, and leaves a note on the track naming the chat" '[ -z "$(stop s1 false)" ] && [ "$(cut -f2,3 "$st/stamp-shop@tickets.unsaved")" = "s1	-" ]'
 note="$st/stamp-shop@tickets.unsaved"
 printf 'shop/tickets\n' > "$st/track-n6"; out=$(hook load '{"session_id":"n6","source":"startup"}')
 ok "a chat opened on the track while that one is open leaves its work to it" '[[ "$out" == *"Another chat on this track, still open, has work STATE.md doesn'"'"'t have yet"* && "$out" != *"Before your first reply"* ]] && [ ! -f "$st/gap-n6" ]'
 edit n6 Edit "$K/shop/tickets/STATE.md"
 ok "and its save leaves the note for that chat" '[ -s "$note" ]'
 out=$(hook load '{"session_id":"s1","source":"resume"}')
-ok "the chat that left the note isn't told about it at a resume; its next message asks for the save" '[[ "$out" != *"left off"* && "$out" != *"Another chat"* ]]'
+ok "the chat that left the note isn't told about it at a resume; its next message asks for the save" '[[ "$out" != *"left off"* && "$out" != *"Another chat"* ]] && [ -f "$st/owed-s1" ]'
 hook end '{"session_id":"s1","reason":"clear"}'
-ok "once that chat ends or is cleared, the note says so" '[ "$(cut -f2- "$note")" = "s1	ended" ]'
+ok "once that chat ends or is cleared, the note says so" '[ "$(cut -f2,3 "$note")" = "s1	ended" ]'
 out=$(hook load '{"session_id":"n7","source":"clear","session_title":"shop/tickets"}')
 ok "and the next chat on the track fills the gap" '[[ "$out" == *"The last chat on this track left off on "*" with work STATE.md doesn'"'"'t have yet. Before your first reply, update its Current and Next step"*"marking those lines [assumed], and tell the user in one line"* ]] && [ -f "$st/gap-n7" ]'
 cp "$note" "$R/note.tmp"; edit n7 Edit "$K/shop/tickets/STATE.md"
 ok "its save clears the note" '[ ! -f "$note" ] && [ ! -f "$st/gap-n7" ]'
-mv "$R/note.tmp" "$note"; sed -i '' 's/ended$/-/' "$note"; touch -t "$(mins_ago 1500)" "$note"; printf 'shop/tickets\n' > "$st/track-n8"
+rm -f "$R/note.tmp"; printf '%s\t%s\t-\t%s\n' "2026-11-01 10:00" s1 "$(( $(date +%s) - 90000 ))" > "$note"; printf 'shop/tickets\n' > "$st/track-n8"
 out=$(hook load '{"session_id":"n8","source":"startup"}')
 ok "a note an open chat left a day ago counts as left behind too" '[[ "$out" == *"The last chat on this track left off on"* ]]'
 printf '2026-10-01 10:00\n' > "$note"
 out=$(hook load '{"session_id":"n8","source":"startup"}')
 ok "so does a note from before notes named the chat" '[[ "$out" == *"left off on 2026-10-01 10:00 with work"* ]]'
+printf '%s\t%s\t-\n' "2026-11-01 10:00" s1 > "$note"; touch -t "$(mins_ago 1500)" "$note"
+out=$(hook load '{"session_id":"n8","source":"startup"}')
+ok "and an open chat's note from before notes carried the time, once the file is a day old" '[[ "$out" == *"left off on 2026-11-01 10:00 with work"* ]]'
+rm -f "${st:?}"/*-n8
+# Several chats on one track: each has its own line in the note.
+for c in p1 p2; do printf 'shop/tickets\n' > "$st/track-$c"; done; rm -f "$note"
+edit p1 Edit "$K/shop/tickets/STATE.md"; edit p1 Edit "$R/api/cart.js"; stop p1 false >/dev/null
+edit p2 Edit "$K/shop/tickets/STATE.md"; edit p2 Edit "$R/api/cart.js"; stop p2 false >/dev/null
+ok "two chats with unsaved work each get a line in the note" '[ "$(cut -f2 "$note" | sort | tr "\n" " ")" = "p1 p2 " ]'
+edit p2 Edit "$K/shop/tickets/STATE.md"
+ok "one chat's save removes only its own line" '[ "$(cut -f2 "$note")" = p1 ]'
+printf 'shop/tickets\n' > "$st/track-p3"; out=$(hook load '{"session_id":"p3","source":"startup"}')
+ok "so a third chat is still told the first one has unsaved work" '[[ "$out" == *"Another chat on this track, still open"* ]]'
+hook end '{"session_id":"p2","reason":"other"}' >/dev/null; edit p2 Edit "$R/api/cart.js"; hook end '{"session_id":"p2","reason":"other"}' >/dev/null
+out=$(hook load '{"session_id":"p4","source":"startup","session_title":"shop/tickets"}')
+ok "a chat seeing one ended and one open chat fills the first gap and leaves the open chat's work" '[[ "$out" == *"The last chat on this track left off"* && "$out" == *"Another chat on this track, still open"* ]] && [ -f "$st/gap-p4" ]'
+printf 'shop/tickets\n' > "$st/track-p4"; edit p4 Edit "$K/shop/tickets/STATE.md"
+ok "its save removes the ended chat's line and keeps the open one's" '[ "$(cut -f2,3 "$note")" = "p1	-" ]'
+hook end '{"session_id":"p1","reason":"other"}' >/dev/null; edit p1 Edit "$R/api/cart.js"; hook end '{"session_id":"p1","reason":"other"}' >/dev/null
+out=$(hook load '{"session_id":"p1","source":"resume"}')
+ok "a chat resumed after it ended with unsaved work is asked to save, and its line is open again" '[ -f "$st/owed-p1" ] && [ "$(cut -f2,3 "$note")" = "p1	-" ] && [[ "$out" != *"left off"* ]]'
+bash "$H/scripts/bind.sh" "$R" p1 off >/dev/null
+ok "unbinding a chat removes its line" '[ ! -f "$note" ] && [ -f "$st/unbound-p1" ]'
+rm -f "${st:?}"/*-p[0-9]
 printf '%s\t%s\t-\n' "2026-10-26 10:00" s1 > "$note"; rm -f "$st"/*-n[678]
 rm -f "$st/dirty-n9"; printf 'shop/tickets\n' > "$st/track-n9"; cp "$note" "$R/note.tmp"
 hook end '{"session_id":"n9","reason":"other"}'
@@ -354,8 +392,10 @@ echo "--- compaction and /clear"
 printf 'shop/tickets\n' > "$st/track-cp1"; touch "$st/dirty-cp1"
 out=$(hook load '{"session_id":"cp1","source":"compact"}')
 ok "right after a compaction, a chat with unsaved work saves it, and the decisions the summary still holds" '[[ "$out" == *"This chat has work STATE.md doesn'"'"'t have yet. Before you go on, update its Current and Next step in one edit, from the summary and the code, and record any decision or ruled-out option the summary holds"* ]]'
+touch "$st/owed-cp1"; hook load '{"session_id":"cp1","source":"compact"}' >/dev/null
+ok "and the save it owed isn't asked for a second time at the next message" '[ ! -f "$st/owed-cp1" ]'
 rm -f "$st/dirty-cp1"; out=$(hook load '{"session_id":"cp1","source":"compact"}')
-ok "one with nothing unsaved isn't asked" '[[ "$out" == *"compacted 2 time"* && "$out" != *"This chat has work STATE.md"* ]]'
+ok "one with nothing unsaved isn't asked" '[[ "$out" == *"compacted 3 time"* && "$out" != *"This chat has work STATE.md"* ]]'
 rm -f "${st:?}"/*-cp1
 out=$(hook load '{"session_id":"s1","source":"compact"}')
 ok "the first compaction is counted" '[[ "$out" == *"compacted 1 time"* && "$out" == *"Read on start"* && "$out" != *"/trackside:save"* ]]'

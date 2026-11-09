@@ -28,8 +28,12 @@ fi
 # are kept: they matter most after a long pause, and closing a track removes its own.
 find "$st" -type f ! -name .gitignore ! -name 'stamp-*' ! -name 'deep-*' ! -name 'named-*' ! -name 'whole-*' ! -name 'limit-*' -mtime +"${TRACKSIDE_STATE_DAYS:-30}" -exec rm -f {} + 2>/dev/null
 [ -n "$binding" ] && printf '%s\n' "$binding" > "$st/track-$sid"
-# A chat that starts unbound may only lack its title: the prompt hook may rebind it at its first message, never later.
-if [ -n "$binding" ]; then rm -f "$st/pending-$sid"; else touch "$st/pending-$sid"; fi
+# A chat the app started without its title may only lack it: the prompt hook may rebind it at its first message. A
+# compaction or resume keeps the chat, so an unbound one there was unbound on purpose.
+case "$binding:$src" in
+  :startup|:clear|:fork) touch "$st/pending-$sid" ;;
+  *) rm -f "$st/pending-$sid" ;;
+esac
 bash "$here/../scripts/index.sh" "$root" 2>/dev/null
 
 if [ -z "$binding" ] || [ ! -f "$keep/$binding/STATE.md" ]; then
@@ -57,18 +61,22 @@ add "The user may call a track a workspace; /trackside:current shows this one."
 add "STATE.md is the handoff for the next chat and must stay current. Record each decision as soon as it's made, with the options rejected and why, where FEATURE.md says decisions go. Write down only what a new chat couldn't get from the code, git, the docs or a command: no copied file contents, diffs or test output; point to them instead."
 add "Keep trackside's bookkeeping out of your replies: update STATE.md before you write a reply, not after it, in one edit (one Edit call or one script), never a series of small ones, since every call re-reads the whole chat; and don't tell the user about saves, fixes the automatic check asked for, or commits of the trackside folder. Mention trackside only when the user has to decide something, in a line before the rest of your reply, never after a question you ask."
 [ -z "$(source_docs "$keep" "${binding%%/*}")" ] || add "The source docs FEATURE.md lists are the source of truth: before you state, decide or change anything they cover, read it with the trackside lookup skill (/trackside:lookup <ID or heading words>), which prints the exact text, instead of trusting what STATE.md says, and cite what you use by ID (such as AD-28) or heading."
-# The note names the chat with unsaved work. That chat itself is asked at its next message. Another chat fills the gap
-# only once that chat has ended, or left it for a day; a chat from before notes named one has only the date.
-note="$(stamp_file "$keep" "$binding").unsaved"
+# The note has a line for each chat with unsaved work. This chat's own line, at a resume, makes its save owed again.
+# This chat fills the gap of chats that ended or left their work for a day, and leaves an open chat's work to it.
+note=$(note_file "$keep" "$binding")
 if [ -s "$note" ] && [ -z "$worktree" ]; then
-  IFS=$'\t' read -r when who how < "$note"
-  if [ "${who:-}" != "$sid" ]; then
-    if [ -z "${who:-}" ] || [ "${how:-}" = ended ] || [ -n "$(find "$note" -mmin +1440 2>/dev/null)" ]; then
-      add "The last chat on this track left off on $when with work STATE.md doesn't have yet. Before your first reply, update its Current and Next step from what changed (below) and the code, marking those lines [assumed], and tell the user in one line that you filled in work the last chat left unsaved."
-      touch "$st/gap-$sid"
-    else
-      add "Another chat on this track, still open, has work STATE.md doesn't have yet (its last turn ended $when). It saves that work itself, so don't fill it in from here."
-    fi
+  if [ -f "$st/dirty-$sid" ] && awk -F'\t' -v s="$sid" '$2 == s { f = 1 } END { exit !f }' "$note"; then
+    note_set "$note" "$sid" -
+    touch "$st/owed-$sid"
+  fi
+  left=$(note_lines "$note" left | awk -F'\t' -v s="$sid" '$2 != s')
+  open=$(note_lines "$note" open | awk -F'\t' -v s="$sid" '$2 != s')
+  if [ -n "$left" ]; then
+    add "The last chat on this track left off on $(printf '%s\n' "$left" | cut -f1 | sort | tail -1) with work STATE.md doesn't have yet. Before your first reply, update its Current and Next step from what changed (below) and the code, marking those lines [assumed], and tell the user in one line that you filled in work the last chat left unsaved."
+    touch "$st/gap-$sid"
+  fi
+  if [ -n "$open" ]; then
+    add "Another chat on this track, still open, has work STATE.md doesn't have yet (its last turn ended $(printf '%s\n' "$open" | cut -f1 | sort | tail -1)). It saves that work itself, so don't fill it in from here."
   fi
 fi
 if starts_clean "$keep" "$binding"; then
@@ -88,6 +96,7 @@ if [ "$src" = "compact" ]; then
   # Right after a compaction the context is at its smallest, so a save costs the least it ever will in this chat, and
   # the summary is the last place this session's recent decisions still exist.
   if [ -f "$st/dirty-$sid" ] && [ -z "$worktree" ]; then
+    rm -f "$st/owed-$sid"
     add "This chat has work STATE.md doesn't have yet. Before you go on, update its Current and Next step in one edit, from the summary and the code, and record any decision or ruled-out option the summary holds that the track doesn't, without mentioning it."
   fi
 fi

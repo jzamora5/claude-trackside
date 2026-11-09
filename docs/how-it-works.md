@@ -34,7 +34,7 @@ Several chats can work on one feature at once, on tickets, a research topic or r
 - When none does, it offers to create one, and creates nothing until you agree.
 - A ticket still waits for your approval of its plan.
 
-**Typing the command.** You can also type `/trackside:start <feature>/<track>`, always with the full name, followed by your request: `/trackside:start legal/terms check the new vendor doc`. Only `/trackside:start` binds or unbinds; a bare `/start` may be another plugin's command. `/trackside:start off` unbinds the chat, and a chat you unbound stays unbound, after `/clear` too. A chat with unsaved work on one track saves it before switching to another.
+**Typing the command.** You can also type `/trackside:start <feature>/<track>`, always with the full name, followed by your request: `/trackside:start legal/terms check the new vendor doc`. Only `/trackside:start` binds or unbinds; a bare `/start` may be another plugin's command. `/trackside:start off` unbinds the chat, and a chat you unbound stays unbound, through compactions, resumes and `/clear`. Unbinding by asking in words renames the chat only at your next message, so a `/clear` straight after it can put the chat back on the track; type the command instead when you'll clear right away. A chat with unsaved work on one track saves it before switching to another.
 
 **Names.** A chat you haven't named is named after its track. A chat you named keeps its name, and trackside remembers which track that name is on. A name you give a chat partway through is picked up at its next start or `/clear`. Two chats with the same name share one remembered track, the most recent.
 
@@ -62,7 +62,7 @@ Several chats can work on one feature at once, on tickets, a research topic or r
 
 A shell command that changes the track's own `STATE.md` counts as a save; one that only reads it doesn't.
 
-**When a turn ends unsaved.** trackside doesn't send the chat back after its reply, so nothing lands after a reply you're reading. Instead, your next message starts with the request, before its answer. Whenever a turn ends with unsaved work, even before a save is due, the chat leaves a note on the track, naming itself.
+**When a turn ends unsaved.** trackside doesn't send the chat back after its reply, so nothing lands after a reply you're reading. Instead, once a save is due, your next message starts with the request, before its answer. Whenever a turn ends with unsaved work, even before a save is due, the chat leaves its own line in the track's note, so several open chats never hide each other's work. Resuming a chat that has a line makes its save due again.
 - Another chat opened on that track while the first is still open is told to leave that work to it.
 - Once the first chat ends or is cleared, or leaves the note for a day, the next chat on the track is told the last one left off with unsaved work. It fills the gap from the code and git, marks those lines `[assumed]`, and tells you in one line.
 
@@ -70,11 +70,11 @@ A shell command that changes the track's own `STATE.md` counts as a save; one th
 
 **The handoff check.** `/trackside:save` then has a subagent with no memory of the chat read the track the way a new chat would, and fills the gaps it finds.
 
-**Commits.** If `.trackside/` has its own git history, the Stop hook commits it at the end of each turn that changed it. The commit message names every track that changed, so the agent spends no calls on it.
+**Commits.** If `.trackside/` has its own git history, the Stop hook commits it at the end of each turn that changed it. The commit message names the tracks and feature folders that changed, so the agent spends no calls on it.
 
 ## Reloading
 
-**When it reloads.** `/clear`, a resume or a compaction reloads the feature and the track on their own. If the app starts a cleared chat without its title, trackside puts the chat back on its track at your first message, by its name. That happens only at the first message, so a chat you unbind on purpose stays unbound. Right after a compaction, a chat with unsaved work saves it, and records any decision or ruled-out option the summary holds that the track doesn't: the context is at its smallest then, so the save costs the least, and the summary is the last place those decisions still exist.
+**When it reloads.** `/clear`, a resume or a compaction reloads the feature and the track on their own. If the app starts a cleared chat without its title, trackside puts the chat back on its track at your first message, by its name, with the whole reload it would have had. That happens only at the first message after the app starts a chat, never after a compaction or resume, so a chat you unbind stays unbound. Right after a compaction, a chat with unsaved work saves it, and records any decision or ruled-out option the summary holds that the track doesn't: the context is at its smallest then, so the save costs the least, and the summary is the last place those decisions still exist.
 
 **Staying under the limit.** Claude Code caps each hook's output at 10,000 characters, so the reload comes in two outputs:
 - `STATE.md` in one of its own, with `LESSONS.md` after it on a track whose items start clean;

@@ -80,10 +80,11 @@ write_doc_stamp() {
 [ -n "$fp" ] || fp=$(field '.tool_input.file_path // .tool_input.notebook_path')
 case "$fp" in
   "$tdir/STATE.md")
-    # The save fills this chat's own unsaved work, or the gap the reload asked it to fill; a note another chat that's
-    # still open left stays for that chat.
-    note="$(stamp_file "$keep" "$binding").unsaved"
-    if [ "$(cut -s -f2 "$note" 2>/dev/null)" = "$sid" ] || [ -f "$st/gap-$sid" ]; then rm -f "$note"; fi
+    # The save fills this chat's own unsaved work, and the gaps the reload asked it to fill; the lines of other chats
+    # that are still open stay for them.
+    note=$(note_file "$keep" "$binding")
+    note_drop "$note" "$sid"
+    [ ! -f "$st/gap-$sid" ] || note_drop "$note" left
     rm -f "$st/dirty-$sid" "$st/nudged-$sid" "$st/owed-$sid" "$st/gap-$sid"
     touch "$st/saved-$sid"
     write_stamp

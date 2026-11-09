@@ -134,7 +134,7 @@ Session handoff tools write a summary when you ask for one, for one session or o
 
 ## Status
 
-Version 0.25.0, early ([changelog](CHANGELOG.md)). Until 0.15.0 the plugin was called keep; two other Claude Code plugins use that name, and Claude Code runs the hooks of only one enabled plugin per name.
+Version 0.25.1, early ([changelog](CHANGELOG.md)). Until 0.15.0 the plugin was called keep; two other Claude Code plugins use that name, and Claude Code runs the hooks of only one enabled plugin per name.
 
 - **Hooks and scripts:** tested with simulated hook inputs (`bash tests/hooks.test.sh`) on macOS's bash 3.2.
 - **Agent behavior:** 30 behaviors are checked in real headless sessions with `claude plugin eval` (`bash tests/evals.sh`, cases in `plugins/trackside/evals/`).

@@ -19,7 +19,7 @@ fi
 # Claude Code blocks edits to the main checkout from a worktree session, and .trackside/ is there: asking for an
 # update the chat can't make would only repeat every turn.
 [ -z "$worktree" ] || exit 0
-printf '%s\t%s\t-\n' "$(date +%Y-%m-%d\ %H:%M)" "$sid" > "$(stamp_file "$keep" "$binding").unsaved"
+note_set "$(note_file "$keep" "$binding")" "$sid" -
 save_due "$st" "$sid" || exit 0
 touch "$st/owed-$sid"
 exit 0

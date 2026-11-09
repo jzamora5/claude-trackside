@@ -53,7 +53,7 @@ resolve_name() {
 # track: switching would leave that work to be saved into the wrong one. "move" says that work belongs to the new
 # track, so it moves with the chat and the old track's note about it goes.
 bind_chat() {
-  local target before note
+  local target before
   target=$(resolve_name "$1" "$3")
   [ -n "$target" ] || return 1
   before=$(cat "$1/.state/track-$2" 2>/dev/null || true)
@@ -64,20 +64,23 @@ bind_chat() {
   # A reminder or an unbinding note left from before no longer applies once the chat is on another track.
   if [ "$before" != "$target" ]; then
     rm -f "$1/.state/nudged-$2" "$1/.state/off-$2" "$1/.state/owed-$2"
-    note="$(stamp_file "$1" "$before").unsaved"
-    [ -z "$before" ] || [ "$(cut -s -f2 "$note" 2>/dev/null)" != "$2" ] || rm -f "$note"
+    [ -z "$before" ] || note_drop "$(note_file "$1" "$before")" "$2"
   fi
+  rm -f "$1/.state/unbound-$2"
   printf '%s\n' "$target" > "$1/.state/track-$2"
   printf '%s' "$target"
 }
 
-# unbind_chat <keep> <session id>: unbinds the chat, dropping its unsaved-work marker, and prints the chat's
-# new name. "<feature>/<track> (unbound)" never reads as a track, so the chat isn't rebound by its name.
+# unbind_chat <keep> <session id>: unbinds the chat, dropping its unsaved-work marker and its line in the track's
+# note, and prints the chat's new name. "<feature>/<track> (unbound)" never reads as a track, so the chat isn't rebound
+# by its name; until the app shows that name, unbound-<session> keeps a compaction or resume from rebinding it.
 unbind_chat() {
   local before
   before=$(cat "$1/.state/track-$2" 2>/dev/null || true)
   [ -n "$before" ] || return 0
+  note_drop "$(note_file "$1" "$before")" "$2"
   rm -f "$1/.state/track-$2" "$1/.state/dirty-$2" "$1/.state/saved-$2" "$1/.state/nudged-$2" "$1/.state/owed-$2"
+  touch "$1/.state/unbound-$2"
   printf '%s (unbound)' "$before"
 }
 
@@ -112,6 +115,39 @@ save_due() {
   local mins="${TRACKSIDE_SAVE_MINUTES:-15}"
   [[ "$mins" =~ ^[0-9]+$ ]] || mins=15
   [ "$mins" = 0 ] || [ ! -f "$1/saved-$2" ] || [ -n "$(find "$1/saved-$2" -mmin +"$mins" 2>/dev/null)" ]
+}
+
+# A track's unsaved-work note (<stamp>.unsaved) has one line per chat with work STATE.md doesn't have yet:
+# date, session id, "-" while the chat is open or "ended", and the time in seconds. Notes from older versions have only
+# the date, or no seconds.
+note_file() { printf '%s.unsaved' "$(stamp_file "$1" "$2")"; }
+
+# note_set <note> <session id> <-|ended>: writes or replaces this chat's line.
+note_set() {
+  local tmp
+  tmp=$(mktemp "$1.XXXXXX") || return 0
+  { [ ! -f "$1" ] || awk -F'\t' -v s="$2" '$2 != s' "$1"
+    printf '%s\t%s\t%s\t%s\n' "$(date +%Y-%m-%d\ %H:%M)" "$2" "$3" "$(date +%s)"; } > "$tmp" && mv "$tmp" "$1"
+}
+
+# note_drop <note> <session id|left>: removes this chat's line, or with "left" the lines of chats that left work
+# behind; the file goes when no line is left.
+note_drop() {
+  local tmp
+  [ -f "$1" ] || return 0
+  tmp=$(mktemp "$1.XXXXXX") || return 0
+  if [ "$2" = left ]; then note_lines "$1" open > "$tmp"; else awk -F'\t' -v s="$2" '$2 != s' "$1" > "$tmp"; fi
+  if [ -s "$tmp" ]; then mv "$tmp" "$1"; else rm -f "$tmp" "$1"; fi
+}
+
+# note_lines <note> <left|open>: the lines of chats that left work behind (ended, older than a day, or from an older
+# version that named no chat), or the others. A line without seconds is aged by the file.
+note_lines() {
+  local old=0
+  [ -z "$(find "$1" -mmin +1440 2>/dev/null)" ] || old=1
+  awk -F'\t' -v now="$(date +%s)" -v old="$old" -v want="$2" \
+    '{ left = ($2 == "" || $3 == "ended" || ($4 == "" && old) || ($4 != "" && now - $4 > 86400)) }
+     (want == "left") == left' "$1" 2>/dev/null
 }
 
 compactions() { local c; c=$(cat "$1/compactions-$2" 2>/dev/null); [[ "$c" =~ ^[0-9]+$ ]] && echo "$c" || echo 0; }
@@ -292,6 +328,7 @@ cut_to=$(( hook_limit - 400 ))
 chat_binding() {
   local b named
   b=$(cat "$1/.state/track-$2" 2>/dev/null || true)
+  [ -n "$b" ] || [ ! -f "$1/.state/unbound-$2" ] || return 0
   if [ -z "$b" ] && [[ "$3" == */* ]] && valid_name "${3%%/*}" && valid_name "${3#*/}" && [ -f "$1/$3/STATE.md" ]; then
     b="$3"
   fi
