@@ -150,7 +150,7 @@ hook bind '{"session_id":"b4","prompt":"/trackside:start shop/tickets"}' >/dev/n
 out=$(hook bind '{"session_id":"b4","prompt":"/trackside:start off"}')
 ok "a typed /trackside:start off unbinds and renames nothing" '[ ! -f "$st/track-b4" ] && [ "$(jq -r ".hookSpecificOutput.sessionTitle // empty" <<<"$out")" = "" ]'
 B=$(mktemp -d "${TMPDIR:-/tmp}/trackside-nojq.XXXXXX")
-for c in dirname mkdir cat basename wc tr rm; do ln -s "$(command -v "$c")" "$B/$c"; done
+for c in dirname mkdir cat basename wc tr rm grep sed head touch; do ln -s "$(command -v "$c")" "$B/$c"; done
 out=$(PATH="$B" /bin/bash "$H/scripts/bind.sh" "$R" j1 shop/research)
 ok "without jq, binding says trackside's hooks are off" '[[ "$out" == *"Bound this chat to shop/research."* && "$out" == *"jq isn'"'"'t installed"* ]]'
 out=$(bash "$H/scripts/bind.sh" "$R" j2 shop/research)
