@@ -29,6 +29,17 @@
             "timeout": 15
           }
         ]
+      },
+      {
+        "matcher": "startup|clear|fork",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/notice.sh",
+            "args": [],
+            "timeout": 10
+          }
+        ]
       }
     ],
     "PostToolUse": [

@@ -12,14 +12,31 @@ budget=$reload_budget
 out=""
 add() { out+="$1"$'\n'; }
 
-# A session that starts without a binding (after /clear) is rebound by its title: a chat trackside named after its
-# track by that name, and a chat the user named through the track trackside remembered for the name.
-binding=$(chat_binding "$keep" "$sid" "$title")
+# A session that starts without a binding is rebound: after /clear from the chat it ended (cleared_note), else by the
+# track trackside remembers for its title, else by the track its title names.
+cleared=""
+[ "$src" != clear ] || cleared=$(cleared_note "$keep" "$PPID")
+binding=$(chat_binding "$keep" "$sid" "$title" "$([ "$src" != clear ] || printf '%s' "$PPID")")
+# The chat a /clear ended carries on here, unbound if the user unbound it.
+[ "$cleared" != off ] || touch "$st/unbound-$sid"
+[ -z "$title" ] || printf '%s\n' "$title" > "$st/seen-$sid"
 if [ -n "$title" ] && ! keep_title "$title"; then
   printf '%s\n' "$title" > "$st/name-$sid"
-  [ -n "$binding" ] && [ -f "$keep/$binding/STATE.md" ] && map_name "$keep" "$title" "$binding"
 else
   rm -f "$st/name-$sid"
+fi
+# A chat that starts on its track continues a chat that was on it, so its title stays on the track and it isn't offered
+# the track's name, except a fork, which is a second chat with the same name and is offered the next number once.
+if [ -n "$binding" ] && [ -f "$keep/$binding/STATE.md" ]; then
+  title_map "$keep" "$sid" "$binding"
+  [ -f "$st/name-asked-$sid" ] || printf '%s\n' "$binding" > "$st/name-asked-$sid"
+  if [ "$src" = fork ] && [ -n "$title" ] && [ ! -f "$st/rename-$sid" ] && names_chats "$keep" "$binding"; then
+    want=$(name_offer "$keep" "fork-of-$sid" "${title% · [0-9]*}")
+    if [ -n "$want" ] && [ "$want" != "$title" ]; then
+      printf '%s\n' "$want" > "$st/rename-$sid"
+      rm -f "$st/rename-shown-$sid"
+    fi
+  fi
 fi
 [ "$src" = "clear" ] && rm -f "$st/compactions-$sid" "$st/offered-$sid" "$st/judged-$sid" "$st/health-$sid"
 
@@ -43,9 +60,9 @@ if [ -z "$binding" ] || [ ! -f "$keep/$binding/STATE.md" ]; then
     add "Tracks, their current work or goal, and how to start each:"
     add "$list"
   fi
-  # A chat the user unbound stays unbound after /clear: its title says so, or trackside remembered "off" for its
-  # name.
-  if [[ "$title" == *" (unbound)" ]] || [ "$(named_track "$keep" "$title")" = off ]; then
+  # A chat the user unbound stays unbound after /clear: the chat it cleared handed over "off", trackside remembered
+  # "off" for its name, or its title says so, as trackside named unbound chats before 0.26.0.
+  if [[ "$title" == *" (unbound)" ]] || [ "$(named_track "$keep" "$title")" = off ] || [ -f "$st/unbound-$sid" ]; then
     add "The user unbound this chat from its track, so don't bind it on your own. If they ask to use a track, run the trackside start skill (/trackside:start) with its full name, <feature>/<track>."
   else
     add "When a message of the user starts work (a change, a review, research or a ticket, not a quick question): if one track clearly fits it, because its name, goal or current work is about that work and no other track's is, bind the chat to it right away by running the trackside start skill (/trackside:start) with the track's full name, <feature>/<track>, and carry on with what they asked. If more than one track could fit, ask once which, listing them. If none fits, offer once to create a track, and create it only after the user agrees, by running the trackside start skill with no name. Don't bind again in this chat once the user unbinds it or turns a track down. Otherwise just answer."
@@ -94,10 +111,11 @@ if [ "$src" = "compact" ]; then
   add "This chat has been compacted $n time(s); the track's files reloaded with this are authoritative over the summary."
   add "Re-read the files FEATURE.md and CONTEXT.md list under \"Read on start\"; the summary may have dropped them."
   # Right after a compaction the context is at its smallest, so a save costs the least it ever will in this chat, and
-  # the summary is the last place this session's recent decisions still exist.
+  # the summary is the last place this session's recent decisions still exist. The request also comes with the next
+  # message (owed): in live runs, agents answered that message without acting on the reload's request alone.
   if [ -f "$st/dirty-$sid" ] && [ -z "$worktree" ]; then
-    rm -f "$st/owed-$sid"
-    add "This chat has work STATE.md doesn't have yet. Before you go on, update its Current and Next step in one edit, from the summary and the code, and record any decision or ruled-out option the summary holds that the track doesn't, without mentioning it."
+    touch "$st/owed-$sid"
+    add "This chat has work STATE.md doesn't have yet. Before your first reply, update its Current and Next step in one edit, from the summary and the code, and record any decision or ruled-out option the summary holds that the track doesn't, without mentioning it."
   fi
 fi
 
@@ -113,7 +131,7 @@ if [ -z "$worktree" ]; then
   fi
   if [ "$(bash "$here/../scripts/audit.sh" "$root" "$binding" due 2>/dev/null)" = due ]; then
     add ""
-    add "trackside's periodic review of this track is due. Start the trackside audit skill for $binding now, without waiting for the user; it runs in the background on a cheaper model and reads only. When its list comes back, apply the items it marks lossless, only in files inside .trackside/, write the other items to the track's review-<date>.md (or \"Nothing needs the user.\"; writing the file marks the review as handled) with an Inbox line pointing to it when it has items, and show the user the other items once, at a natural pause."
+    add "trackside's periodic review of this track is due. Start the trackside audit skill for $binding now, without waiting for the user; it runs in the background on a cheaper model and reads only. When its list comes back, apply the items it marks lossless, only in files inside .trackside/, write the other items to the track's review-<date>.md (or \"Nothing needs the user.\"; writing the file marks the review as handled) with an Inbox line pointing to it when it has items, and at a natural pause, settle the other items with the user in the chat, never by pointing to the file: first confirm what the files, git or gh can, so each line states facts; list the changes in plain words, one line each saying what you'd change and why, and ask once whether to apply them all or which to skip; ask a choice only the user can make, such as moving notes to another track, as its own question with your recommendation. Apply what they approve, and keep in the file, with its Inbox line, only what they postpone."
   fi
 fi
 out+="$(reload_files "$keep" "$binding" $(( budget - $(bytes "$out") - 200 )))"$'\n'

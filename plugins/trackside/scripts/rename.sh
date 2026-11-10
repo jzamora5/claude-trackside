@@ -68,10 +68,11 @@ for b in "$st"/track-*; do
   sid="${b##*/track-}"
   printf '%s\n' "$nv" > "$b"
   kept=$((kept + 1))
-  # A chat the user named keeps its name. Only a hook can name a chat, so the bind hook applies this at the
-  # chat's next message.
-  [ -n "$(chat_name "$keep" "$sid")" ] && continue
-  printf '%s' "$nv" > "$st/title-$sid"
+  # Only a title that is the old track's name, numbered or not, follows it; a chat with any other title, or none, keeps
+  # it. Only a hook can rename a chat, so the bind hook applies this at the chat's next message, and says so.
+  cur=$(cat "$st/seen-$sid" 2>/dev/null)
+  case "$cur" in "$v") t="$nv" ;; "$v · "[0-9]*) t="$nv${cur#"$v"}" ;; *) continue ;; esac
+  printf '%s' "$t" > "$st/title-$sid"
   renamed=$((renamed + 1))
 done
 echo "Chats kept bound: $kept, renamed at their next message: $renamed"

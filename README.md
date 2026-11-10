@@ -23,7 +23,7 @@ claude plugin install trackside@claude-trackside
 
 1. **Start a track.** In your project, type `/trackside:start` and say what you're working on. The agent proposes a feature and a track, and creates them once you confirm.
 2. **Work as usual.** The agent keeps the track's state current as it works. `/clear`, a resume or a compaction reloads it on its own, and later chats bind to the right track when you start work.
-3. **When a chat gets long,** take the offer to clear it and continue: `/trackside:fresh` saves the track, clears the chat, and the cleared chat picks up where it left off.
+3. **When a chat gets long,** take the offer to clear it and continue: `/trackside:fresh` saves the track, clears the chat, and the cleared chat picks up where it left off, with a line showing which track it's on.
 
 To use it in one project only, add this to that project's `.claude/settings.json` instead of installing it globally:
 
@@ -134,12 +134,13 @@ Session handoff tools write a summary when you ask for one, for one session or o
 
 ## Status
 
-Version 0.25.1, early ([changelog](CHANGELOG.md)). Until 0.15.0 the plugin was called keep; two other Claude Code plugins use that name, and Claude Code runs the hooks of only one enabled plugin per name.
+Version 0.26.0, early ([changelog](CHANGELOG.md)). Until 0.15.0 the plugin was called keep; two other Claude Code plugins use that name, and Claude Code runs the hooks of only one enabled plugin per name.
 
 - **Hooks and scripts:** tested with simulated hook inputs (`bash tests/hooks.test.sh`) on macOS's bash 3.2.
 - **Agent behavior:** 30 behaviors are checked in real headless sessions with `claude plugin eval` (`bash tests/evals.sh`, cases in `plugins/trackside/evals/`).
 - **Where each rule lives:** `tests/rule-homes.tsv` lists each rule stated in more than one file, and the tests fail when a rule turns up anywhere else.
-- **Manual checks:** `tests/live-checklist.md` lists what still needs a person, such as several messages in a row, `/clear`, resume, compaction and the app's permission prompts.
+- **Journeys across several messages:** `bash tests/live.sh` replays 18 journeys in real headless sessions, such as `/clear`, resume, a fork, two compactions, two chats on one track, the permission prompts and the judge. It checks the state files, what the hooks told the agent and the replies. It runs on Haiku by default for about $0.35, and reruns a journey once when a check fails, since answers vary from run to run.
+- **Not automated yet:** whether the desktop app sends a cleared chat's name with its first message, which the rebind after `/trackside:fresh` relies on.
 
 [How trackside works](docs/how-it-works.md) has the details.
 

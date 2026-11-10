@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.26.0 · 2026-11-09
+
+After `/clear`, in a fork, or when a new chat starts on a track by its name, you're shown which track it's on: `trackside: this chat is bound to <feature>/<track>.` Before, only the agent was told. A chat the app starts without its name gets the same line at your first message, when it's rebound.
+
+trackside no longer renames chats on its own: no track names as titles, no "(unbound)". The first time a chat is bound to a track, trackside offers once to rename it after the track, in a notice or in the agent's line that says the chat is bound, and renames it only when you reply `rename`. A declined track isn't offered again, and an open offer goes when the chat unbinds or switches. When another chat has that name, the offer is numbered: `wedding-fund/phase-1 · 2`; a fork is offered the next number once. A track whose `CONTEXT.md` says `**Name chats after the track:** no` makes no offers. A `/clear` hands the chat's track, or its unbinding, to the chat it starts, through a note keyed to the Claude Code process both run in, so a chat keeps its track without a name and isn't asked again. Before, the track's name in the title was the link, so every chat on a track had the same title, and in VS Code each `/clear` left another one in the list. A track rename renames only the chats that took its name, and says so in a notice. A chat that took a track's name and then left the track stays off it in a fork.
+
+A deep review's items that need you are settled in the chat. The agent first confirms what it can from the files, git or GitHub, lists the changes to approve at once or skip by number, and asks a real choice as its own question with its recommendation. Before, it pointed you to the review file. The file keeps only what you postpone.
+
+A bound chat renamed partway through is remembered on its track by its new name at the next message, so `/clear` finds the track again. Before, only a resume picked the new name up, and the docs said `/clear` did too.
+
+The manual checklist is gone. `tests/live.sh` replays its journeys in real headless sessions, each chat one long-lived `claude` process fed its messages one at a time, and checks the state files, what the hooks told the agent and the replies. The checklist's other rows were already covered by the hook tests and the evals. Its first runs found these, now fixed:
+
+- After a compaction with unsaved work, the agent answered the next message without saving, on Haiku and Sonnet alike. The next message now asks for the save as well as the reload, undoing 0.25.1's change that asked only once.
+- `/trackside:next` marked a merged pull request in only about half the runs: the agent skipped that quiet edit. `prs.sh` now marks the lines itself, and still only reads from GitHub. The skill runs it before reading STATE.md.
+- A track the start skill had just created wasn't in INDEX.md until the next save. The start skill's bind now refreshes the index.
+- In default permission mode, the start skill's freshness check asked for permission: its command passed `$PWD`, which kept it from matching the skill's pre-approval. `freshness.sh` now defaults to the folder it runs in.
+
+Documented, not changed: a fork of a chat with no name starts unbound until the next request binds it. Its transcript doesn't exist yet when it starts, so nothing links it to the chat it came from.
+
 ## 0.25.1 · 2026-11-09
 
 Fixes from a three-pass audit of 0.24.0 and 0.25.0 (journeys replayed through the real hooks, the docs checked against the code, and an independent review). Every defect was reproduced first.

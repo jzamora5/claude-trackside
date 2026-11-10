@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
 # freshness.sh <project root> <feature>/<track> [cwd]: what changed in the feature's source docs and repos since
-# the track's STATE.md was last written, compared with the stamps the edit hook records. Pass the session's
-# working directory as cwd so a Claude Code worktree session is checked in its worktree.
+# the track's STATE.md was last written, compared with the stamps the edit hook records. cwd, by default the folder it
+# runs in, is the session's working directory, so a Claude Code worktree session is checked in its worktree. Skills
+# leave it out: a shell variable in their command keeps it from matching their pre-approval.
 set -uo pipefail
 . "$(dirname "$0")/common.sh"
 root=$(keep_root "${1:?project root}" "$PWD")
 track="${2:?<feature>/<track>}"
 keep=$(keep_dir "$root")
 stamp=$(stamp_file "$keep" "$track")
-worktree=$(worktree_root "$root" "${3:-}")
+worktree=$(worktree_root "$root" "${3:-$PWD}")
 
 # doc_changes <doc> <old index> <new index> <cited IDs>: one line on what changed in the doc, then "cited<TAB>ID"
 # for each ID the track cites that changed or was removed.

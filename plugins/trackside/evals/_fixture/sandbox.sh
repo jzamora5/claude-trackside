@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Builds the demo project every trackside eval starts from, in the run's empty workspace: two repos (api, web), a
-# design doc, and a trackside folder with one feature (demo) and two tracks (tickets, research). It matches the
-# sandbox that tests/live-checklist.md uses.
+# design doc, and a trackside folder with one feature (demo) and two tracks (tickets, research). tests/live.sh starts
+# each journey from it too.
 set -euo pipefail
 mkdir -p api web docs .trackside/demo/tickets .trackside/demo/research
 

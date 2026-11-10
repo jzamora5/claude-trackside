@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Usage: bind.sh <project root> <session id> <name | off> [move]
 # Binds a chat from the start skill, for when the agent starts a track the user agreed to, or unbinds it with
-# "off". With "move", from the save skill, a chat with unsaved work switches anyway and takes that work along. Typing /trackside:start binds through the UserPromptSubmit hook instead, which also names the chat.
+# "off". With "move", from the save skill, a chat with unsaved work switches anyway and takes that work along. Typing /trackside:start binds through the UserPromptSubmit hook instead. When a chat moves to a track it wasn't offered
+# before (offer_name), this prints the offer of the track's name for the agent to pass on.
 set -uo pipefail
 . "$(dirname "$0")/common.sh"
 root=$(keep_root "${1:?project root}" "$PWD")
@@ -32,8 +33,8 @@ if [ "$name" = off ]; then
   elif [ -z "$title" ]; then
     echo "This chat isn't bound to a track."
   else
-    if [ -n "$own" ]; then map_name "$keep" "$own" off; else printf '%s' "$title" > "$st/title-$sid"; fi
-    echo "Unbound this chat from ${title% (unbound)}.$unsaved"
+    [ -z "$own" ] || map_name "$keep" "$own" off
+    echo "Unbound this chat from $title.$unsaved"
   fi
   rm -f "$st/off-$sid"
   note_jq
@@ -46,10 +47,16 @@ case $? in
   1) echo "No track is named \"$name\". Use a track's full name, <feature>/<track>." >&2; exit 1 ;;
   2) echo "This chat has unsaved work on $target. Save it there first with /trackside:save, or unbind with /trackside:start off if it doesn't belong there, then bind again." >&2; exit 2 ;;
 esac
-if [ -n "$own" ]; then
-  map_name "$keep" "$own" "$target"
-elif [ "$before" != "$target" ]; then
-  printf '%s' "$target" > "$st/title-$sid"
-fi
+[ -z "$own" ] || map_name "$keep" "$own" "$target"
+offered=""
+offer_name "$keep" "$sid" "$before" "$target" && offered=1
+# A track the start skill just created is listed only once the index is regenerated.
+bash "$(dirname "$0")/index.sh" "$root" >/dev/null 2>&1
 echo "Bound this chat to $target."
+# The prompt hook can show an offer only at the next prompt, after the reply, beside the user's answer to something
+# else, so the agent makes it in the line that says the chat is bound.
+if [ -n "$offered" ]; then
+  touch "$st/rename-shown-$sid"
+  echo "Add to the line that tells the user the chat is bound, in these words: $(offer_line "$keep" "$sid") Don't rename the chat yourself."
+fi
 note_jq

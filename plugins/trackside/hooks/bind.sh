@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # UserPromptSubmit: "/trackside:start <feature>/<track>" binds this chat to the track; "/trackside:start off"
-# unbinds it. A chat without a name of its own is named after its track; a chat the user named keeps its name, and
-# trackside remembers which track that name is on. Any other name, or a switch while the chat has unsaved work, is
-# left to the start skill. A chat the start skill bound or unbound gets its new name at the next prompt. A bound chat
-# whose context has grown is offered a fresh one.
+# unbinds it. Any other name, or a switch while the chat has unsaved work, is left to the start skill. trackside never
+# renames a chat on its own: the first time a chat is bound, the user is offered the track's name for it, and this hook
+# renames the chat only when they reply "rename". It remembers which track each chat's name is on. A bound chat whose
+# context has grown is offered a fresh one.
 . "$(dirname "$0")/lib.sh"
 
 prompt=$(field .prompt)
@@ -11,8 +11,26 @@ name=$(chat_name "$keep" "$sid")
 # A name the user gives a chat after it starts reaches this hook before SessionStart sees it.
 given=$(field .session_title)
 if [ -n "$given" ] && ! keep_title "$given"; then
+  # After /clear a named chat finds its track only by its name.
+  [ "$given" = "$name" ] || [ -z "$binding" ] || map_name "$keep" "$given" "$binding"
   name="$given"
   printf '%s\n' "$given" > "$st/name-$sid"
+fi
+[ -z "$given" ] || printf '%s\n' "$given" > "$st/seen-$sid"
+# The answer to the offer of a name for this chat (offer_name), once the user has seen it. A message that is only
+# "rename", in a few forms, takes it; any other message keeps the chat's name, and the offer stays open until the chat
+# is bound elsewhere, unbound or cleared, so a "yes" first doesn't use it up.
+renamed=""
+if [ -f "$st/rename-$sid" ] && [ -f "$st/rename-shown-$sid" ]; then
+  answer=$(printf '%s' "$prompt" | tr 'A-Z' 'a-z' | tr -d '`*"' | sed -E 's/^[[:space:]]*((yes|ok|okay|sure)[,.!]*[[:space:]]+)?//; s/[[:space:].!,]*$//')
+  case "$answer" in
+    rename|"rename it"|"rename this chat"|"rename please"|"please rename"|"please rename it")
+      renamed=$(cat "$st/rename-$sid")
+      printf '%s\n' "$renamed" > "$st/seen-$sid"
+      if ! keep_title "$renamed"; then printf '%s\n' "$renamed" > "$st/name-$sid"; fi
+      [ -z "$binding" ] || map_name "$keep" "$renamed" "$binding"
+      rm -f "$st/rename-$sid" "$st/rename-shown-$sid" ;;
+  esac
 fi
 title=""
 if [[ "$prompt" =~ ^/trackside:start[[:space:]]+([^[:space:]]+)([[:space:]]|$) ]]; then
@@ -21,11 +39,10 @@ if [[ "$prompt" =~ ^/trackside:start[[:space:]]+([^[:space:]]+)([[:space:]]|$) ]
     if [ -s "$st/track-$sid" ]; then
       { cat "$st/track-$sid"; [ ! -f "$st/dirty-$sid" ] || echo unsaved; } > "$st/off-$sid"
     fi
-    title=$(unbind_chat "$keep" "$sid")
+    unbind_chat "$keep" "$sid" >/dev/null
     [ -z "$name" ] || map_name "$keep" "$name" off
   elif target=$(bind_chat "$keep" "$sid" "${BASH_REMATCH[1]}"); then
-    title="$target"
-    [ -z "$name" ] || map_name "$keep" "$name" "$target"
+    offer_name "$keep" "$sid" "$binding" "$target"
   fi
 fi
 # The app can start a cleared chat without its title, so SessionStart found no track for it. The title arrives with
@@ -33,8 +50,9 @@ fi
 # worktree, doc changes), with STATE.md to read. Only at that first message, and not when the message is itself a
 # /trackside:start, which binds or unbinds on its own.
 rebound=""
+notice=""
 called="${given:-$name}"
-if [ -f "$st/pending-$sid" ] && [ -z "$title" ] && [ ! -s "$st/track-$sid" ] && [ -n "$called" ] \
+if [ -f "$st/pending-$sid" ] && [ ! -s "$st/track-$sid" ] && [ -n "$called" ] \
   && [[ "$prompt" != /trackside:start* ]]; then
   rb=$(chat_binding "$keep" "$sid" "$called")
   if [ -n "$rb" ]; then
@@ -42,6 +60,7 @@ if [ -f "$st/pending-$sid" ] && [ -z "$title" ] && [ ! -s "$st/track-$sid" ] && 
       | "$(dirname "$0")/load.sh" 2>/dev/null)
     files="$(rel "$keep/$rb")/STATE.md"
     starts_clean "$keep" "$rb" && files="$files and LESSONS.md"
+    notice="trackside: this chat is bound to $rb."
     rebound="This chat is back on its track, $rb, by its name \"$called\": the app started it without its name, so this is the reload it would have had. Before you answer, read $files, and if this message asks to go on, propose STATE.md's Next step and wait for the user's OK before starting it. Don't mention this unless the user asks."$'\n'"$reload"
     if [ "$(bytes "$rebound")" -gt "$cut_over" ]; then
       rebound="$(printf '%s' "$rebound" | lines_within "$cut_to")"$'\n'"[Cut to stay under the hook output limit: read $(rel "$keep/$rb")/CONTEXT.md in full.]"
@@ -49,6 +68,14 @@ if [ -f "$st/pending-$sid" ] && [ -z "$title" ] && [ ! -s "$st/track-$sid" ] && 
   fi
 fi
 rm -f "$st/pending-$sid"
+# An offer of a name from this prompt's /trackside:start, or from a fork's start (load.sh), is shown to the user once.
+# The start skill's bind has the agent make its offer instead, in the line that says the chat is bound, since the turn
+# that binds has no prompt left to show it at.
+asked=""
+if [ -s "$st/rename-$sid" ] && [ ! -f "$st/rename-shown-$sid" ]; then
+  asked="trackside: $(offer_line "$keep" "$sid")"
+  touch "$st/rename-shown-$sid"
+fi
 # A save the last turn ended without is asked for before this answer, never after the last one.
 owed=""
 b=$(cat "$st/track-$sid" 2>/dev/null || true)
@@ -90,17 +117,21 @@ if [ -n "$b" ] && [ -z "$worktree" ] && [ ! -f "$st/whole-$sid" ]; then
   [ -z "$offer" ] || [ -z "$due" ] || echo "$c" > "$st/offered-$sid"
 fi
 context="$rebound"
+[ -z "$renamed" ] || context="${context:+$context$'\n'}The user's message \"rename\" answered trackside's offer, so this chat is now named \"$renamed\". Confirm it in a few words."
 [ -z "$owed" ] || context="${context:+$context$'\n'}$owed"
 [ -z "$offer" ] || context="${context:+$context$'\n'}$offer"
-# trackside never renames a chat the user named. Only this hook and SessionStart can name a chat, so scripts/bind.sh
-# leaves the name here for the next prompt.
-if [ -n "$name" ]; then
-  title=""
-elif [ -z "$title" ] && [ -s "$st/title-$sid" ]; then
+# A name the chat took from trackside follows its track's rename (scripts/rename.sh). Only a hook can rename a chat, so
+# the script leaves the new name here for the next prompt.
+if [ -s "$st/title-$sid" ]; then
   title=$(cat "$st/title-$sid")
+  printf '%s\n' "$title" > "$st/seen-$sid"
+  notice="${notice:+$notice$'\n'}trackside: this chat's name follows its track's new name: \"$title\"."
 fi
+[ -z "$renamed" ] || title="$renamed"
 rm -f "$st/title-$sid"
-[ -n "$title$context" ] || exit 0
+[ -z "$asked" ] || notice="${notice:+$notice$'\n'}$asked"
+[ -n "$title$context$notice" ] || exit 0
+[ -z "$notice" ] || warn="$notice${warn:+$'\n'$warn}"
 jq -n --arg t "$title" --arg c "$context" --arg w "$warn" \
   '(if $w != "" then {systemMessage: $w} else {} end) + {hookSpecificOutput: ({hookEventName: "UserPromptSubmit"} + (if $t != "" then {sessionTitle: $t} else {} end) + (if $c != "" then {additionalContext: $c} else {} end))}'
 exit 0

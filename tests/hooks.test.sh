@@ -5,7 +5,7 @@ H="$(cd "$(dirname "$0")/../plugins/trackside" && pwd)"
 R=$(mktemp -d "${TMPDIR:-/tmp}/trackside-test.XXXXXX")
 trap 'rm -rf "$R"' EXIT
 export CLAUDE_PROJECT_DIR="$R"
-unset COMPACT_LIMIT TRACKSIDE_IDLE_DAYS TRACKSIDE_STATE_DAYS TRACKSIDE_SAVE_MINUTES
+unset COMPACT_LIMIT TRACKSIDE_IDLE_DAYS TRACKSIDE_STATE_DAYS TRACKSIDE_SAVE_MINUTES CLAUDE_CODE_ENTRYPOINT
 K="$R/.trackside"
 st="$K/.state"
 pass=0; fail=0
@@ -45,7 +45,7 @@ ok "a trackside folder with no tracks yet still offers to create one" '[[ "$out"
 rm -rf "$X"
 ok "the state folder ignores itself in git" '[ "$(cat "$st/.gitignore")" = "*" ]'
 out=$(hook bind '{"session_id":"s1","prompt":"/trackside:start shop/tickets"}')
-ok "bind names the chat after the track" '[ "$(jq -r .hookSpecificOutput.sessionTitle <<<"$out")" = shop/tickets ]'
+ok "a typed start renames nothing, and shows the user the offer of the track's name" '[ "$(jq -r ".hookSpecificOutput.sessionTitle // empty" <<<"$out")" = "" ] && [[ "$(jq -r ".systemMessage // empty" <<<"$out")" == "trackside: reply rename to name this chat \"shop/tickets"*"Otherwise it keeps its name." ]] && [[ "$(cat "$st/rename-s1")" == shop/tickets* ]] && [[ "$out" != *"additionalContext"*"rename"* ]]'
 ok "bind records the binding" '[ "$(cat "$st/track-s1")" = shop/tickets ]'
 out=$(hook bind '{"session_id":"s2x","prompt":"/start shop/research"}')
 ok "a bare /start, which may be another plugin's command, doesn't bind" '[ ! -f "$st/track-s2x" ]'
@@ -68,6 +68,7 @@ ok "a chat that starts unbound is marked for one rebind at its first message" '[
 for s in rb2 rb3 rb4 rb5 rb6; do touch "$st/pending-$s"; done
 out=$(hook bind '{"session_id":"rb1","prompt":"continue","session_title":"My research chat"}')
 ok "a chat that started unbound is put back on its track from its name at the first message" '[ "$(cat "$st/track-rb1" 2>/dev/null)" = shop/research ] && [[ "$(jq -r .hookSpecificOutput.additionalContext <<<"$out")" == "This chat is back on its track, shop/research, by its name \"My research chat\": the app started it without its name, so this is the reload it would have had. Before you answer, read .trackside/shop/research/STATE.md"*"propose STATE.md'"'"'s Next step and wait for the user'"'"'s OK"*"Active track: shop/research"* ]] && [ ! -f "$st/pending-rb1" ]'
+ok "and the user is shown which track, before any warning" '[ "$(jq -r .systemMessage <<<"$out")" = "trackside: this chat is bound to shop/research." ]'
 out=$(hook bind '{"session_id":"rb2","prompt":"go on","session_title":"shop/tickets"}')
 ok "so is one named after its track" '[ "$(cat "$st/track-rb2" 2>/dev/null)" = shop/tickets ]'
 out=$(hook bind '{"session_id":"rb3","prompt":"hi","session_title":"Left alone"}')
@@ -104,13 +105,13 @@ rm -f "${st:?}"/*-rb[0-9] "${st:?}"/*-rb1[0-9]
 
 echo "--- binding from the start skill"
 out=$(bash "$H/scripts/bind.sh" "$R" b1 shop/research)
-ok "the bind script binds a full name" '[ "$out" = "Bound this chat to shop/research." ] && [ "$(cat "$st/track-b1")" = shop/research ]'
+ok "the bind script binds a full name, and has the agent make the offer of the track's name in its line that says so" '[ "$(head -1 <<<"$out")" = "Bound this chat to shop/research." ] && [[ "$(sed -n 2p <<<"$out")" == "Add to the line that tells the user the chat is bound, in these words: reply rename to name this chat \"shop/research"*"Don'"'"'t rename the chat yourself." ]] && [ -f "$st/rename-shown-b1" ]'
 out=$(hook bind '{"session_id":"b1","prompt":"yes, go ahead"}')
-ok "the next prompt names the chat after the track" '[ "$(jq -r .hookSpecificOutput.sessionTitle <<<"$out")" = shop/research ] && [ ! -f "$st/title-b1" ]'
-out=$(hook bind '{"session_id":"b1","prompt":"and then this"}')
-ok "only once" '[ -z "$out" ]'
+ok "a reply other than rename keeps the chat's name, and the offer stays open" '[ -z "$out" ] && [ -f "$st/rename-b1" ] && [ ! -f "$st/title-b1" ]'
+out=$(hook bind '{"session_id":"b1","prompt":"Yes, rename it."}')
+ok "so a rename after it still takes it" '[[ "$(jq -r .hookSpecificOutput.sessionTitle <<<"$out")" == shop/research* ]] && [ ! -f "$st/rename-b1" ]'
 bash "$H/scripts/bind.sh" "$R" b1 shop/research >/dev/null
-ok "binding the same track again doesn't rename the chat" '[ ! -f "$st/title-b1" ]'
+ok "binding the same track again neither renames the chat nor offers again" '[ ! -f "$st/title-b1" ] && [ ! -f "$st/rename-b1" ]'
 out=$(hook bind '{"session_id":"b2","prompt":"/trackside:start shop/tickets"}'); bash "$H/scripts/bind.sh" "$R" b2 shop/tickets >/dev/null
 ok "after a typed /trackside:start, the skill's bind is a no-op" '[ "$(cat "$st/track-b2")" = shop/tickets ] && [ ! -f "$st/title-b2" ]'
 for a in "b1 shop" "b1 research" "b1 nope" "b1 ../shop/tickets" "b1 shop/tickets/extra" '${CLAUDE_SESSION_ID} shop/research' "b3"; do
@@ -132,19 +133,22 @@ ok "while another chat's note stays" '[ -f "$st/stamp-shop@research.unsaved" ]'
 rm -f "$st/stamp-shop@research.unsaved"; printf 'shop/tickets\n' > "$st/track-b2"; rm -f "$st/title-b2"
 rm -f "$st/dirty-b2"
 out=$(bash "$H/scripts/bind.sh" "$R" b2 shop/research)
-ok "once it's saved, the chat switches" '[ "$out" = "Bound this chat to shop/research." ] && [ "$(cat "$st/title-b2")" = shop/research ]'
+ok "once it's saved, the chat switches" '[ "$out" = "Bound this chat to shop/research." ] && [ ! -f "$st/title-b2" ]'
 touch "$st/dirty-b2"
 out=$(bash "$H/scripts/bind.sh" "$R" b2 off)
 ok "off unbinds the chat and says its unsaved work wasn't saved" '[ ! -f "$st/track-b2" ] && [ ! -f "$st/dirty-b2" ] && [ "$out" = "Unbound this chat from shop/research. Its work since the last save wasn'"'"'t saved there." ]'
 out=$(hook bind '{"session_id":"b2","prompt":"ok"}')
-ok "the chat is renamed so its title can't rebind it" '[ "$(jq -r .hookSpecificOutput.sessionTitle <<<"$out")" = "shop/research (unbound)" ]'
+ok "unbinding renames nothing" '[ "$(jq -r ".hookSpecificOutput.sessionTitle // empty" <<<"$out")" = "" ]'
+out=$(hook end '{"session_id":"b2","reason":"clear"}' >/dev/null; hook load '{"session_id":"b10","source":"clear"}')
+ok "a /clear hands the unbinding to the chat it starts, in the same process, which isn't bound on its own" '[ ! -f "$st/track-b10" ] && [ -f "$st/unbound-b10" ] && [[ "$out" == *"The user unbound this chat from its track, so don'"'"'t bind it on your own"* ]]'
+rm -f "${st:?}"/cleared-*
 out=$(hook load '{"session_id":"b9","source":"clear","session_title":"shop/research (unbound)"}')
 ok "a cleared chat with that title stays unbound, and isn't bound on its own" '[ ! -f "$st/track-b9" ] && [[ "$out" == *"No track is bound"* && "$out" == *"The user unbound this chat from its track, so don'"'"'t bind it on your own"* && "$out" != *"bind the chat to it right away"* ]]'
 out=$(bash "$H/scripts/bind.sh" "$R" b2 off)
 ok "off on an unbound chat says so" '[ "$out" = "This chat isn'"'"'t bound to a track." ]'
 hook bind '{"session_id":"b4","prompt":"/trackside:start shop/tickets"}' >/dev/null
 out=$(hook bind '{"session_id":"b4","prompt":"/trackside:start off"}')
-ok "a typed /trackside:start off unbinds and renames at once" '[ ! -f "$st/track-b4" ] && [ "$(jq -r .hookSpecificOutput.sessionTitle <<<"$out")" = "shop/tickets (unbound)" ]'
+ok "a typed /trackside:start off unbinds and renames nothing" '[ ! -f "$st/track-b4" ] && [ "$(jq -r ".hookSpecificOutput.sessionTitle // empty" <<<"$out")" = "" ]'
 B=$(mktemp -d "${TMPDIR:-/tmp}/trackside-nojq.XXXXXX")
 for c in dirname mkdir cat basename wc tr rm; do ln -s "$(command -v "$c")" "$B/$c"; done
 out=$(PATH="$B" /bin/bash "$H/scripts/bind.sh" "$R" j1 shop/research)
@@ -184,7 +188,7 @@ nf() { (. "$H/scripts/common.sh"; name_file "$K" "$1"); }
 hook load '{"session_id":"u1","source":"startup","session_title":"CASH-508 withdrawal"}' >/dev/null
 ok "trackside records the name a user gave a chat" '[ "$(cat "$st/name-u1")" = "CASH-508 withdrawal" ]'
 out=$(hook bind '{"session_id":"u1","prompt":"/trackside:start shop/tickets"}')
-ok "binding it keeps that name and remembers its track" '[ -z "$out" ] && [ "$(cat "$st/track-u1")" = shop/tickets ] && [ "$(cat "$(nf "CASH-508 withdrawal")")" = shop/tickets ]'
+ok "binding it keeps that name, offers the track's, and remembers its track" '[ "$(jq -r ".hookSpecificOutput.sessionTitle // empty" <<<"$out")" = "" ] && [[ "$(jq -r ".systemMessage // empty" <<<"$out")" == *"reply rename to name this chat"* ]] && [ "$(cat "$st/track-u1")" = shop/tickets ] && [ "$(cat "$(nf "CASH-508 withdrawal")")" = shop/tickets ]'
 out=$(hook load '{"session_id":"u2","source":"clear","session_title":"CASH-508 withdrawal"}')
 ok "after /clear the same name finds the track again" '[[ "$out" == *"Active track: shop/tickets"* ]] && [ "$(cat "$st/track-u2")" = shop/tickets ]'
 hook load '{"session_id":"u3","source":"resume","session_title":"shop/research"}' >/dev/null
@@ -200,12 +204,81 @@ bash "$H/scripts/bind.sh" "$R" u4 off >/dev/null
 ok "the start skill's off on a named chat remembers it too" '[ ! -f "$st/track-u4" ] && [ ! -f "$st/title-u4" ] && [ "$(cat "$(nf "My review")")" = off ]'
 bash "$H/scripts/bind.sh" "$R" u4 shop/research >/dev/null
 ok "binding it again replaces that" '[ "$(cat "$(nf "My review")")" = shop/research ]'
-rm -f "$st"/track-u2 "$st"/track-u3 "$st"/track-u4
+hook load '{"session_id":"u6","source":"startup","session_title":"PR 12"}' >/dev/null
+bash "$H/scripts/bind.sh" "$R" u6 shop/research >/dev/null
+hook bind '{"session_id":"u6","prompt":"go on","session_title":"CR: PR 12"}' >/dev/null
+out=$(hook load '{"session_id":"u7","source":"clear","session_title":"CR: PR 12"}')
+ok "a bound chat renamed later finds its track by the new name after /clear" '[ "$(cat "$st/track-u7" 2>/dev/null)" = shop/research ]'
+hook bind '{"session_id":"u8","prompt":"hi","session_title":"Loose chat"}' >/dev/null
+ok "renaming an unbound chat remembers no track for the name" '[ ! -f "$(nf "Loose chat")" ]'
+rm -f "$st"/track-u2 "$st"/track-u3 "$st"/track-u4 "$st"/track-u6 "$st"/track-u7
+echo "--- offering a chat its track's name, and /clear"
+mkdir -p "$K/nm/one" "$K/nm/two"; printf '# Feature: nm\n\n**Repos:** api\n' > "$K/nm/FEATURE.md"
+for t in one two; do printf '# Track: nm/%s\n**Goal:** g\n' "$t" > "$K/nm/$t/CONTEXT.md"; printf '# State\n\n## Current\n- x\n\n## Next step\n- y\n' > "$K/nm/$t/STATE.md"; done
+out=$(hook bind '{"session_id":"nm1","prompt":"/trackside:start nm/one"}')
+ok "the first bind of a chat offers it the track's name" '[ "$(cat "$st/rename-nm1")" = nm/one ]'
+out=$(hook bind '{"session_id":"nm1","prompt":"Rename."}')
+ok "replying rename names the chat after its track" '[ "$(jq -r .hookSpecificOutput.sessionTitle <<<"$out")" = nm/one ] && [[ "$(jq -r .hookSpecificOutput.additionalContext <<<"$out")" == *"so this chat is now named \"nm/one\". Confirm it in a few words."* ]] && [ "$(cat "$st/seen-nm1")" = nm/one ] && [ ! -f "$st/rename-nm1" ]'
+hook bind '{"session_id":"nm0","prompt":"/trackside:start nm/one"}' >/dev/null; hook bind '{"session_id":"nm0","prompt":"go on"}' >/dev/null
+out=$(bash "$H/scripts/bind.sh" "$R" nm2 nm/one)
+ok "the next chat on the track is offered the next number, since a chat has the name, and one that declined doesn't count" '[ "$(cat "$st/rename-nm2")" = "nm/one · 2" ]'
+hook bind '{"session_id":"nm2","prompt":"ok"}' >/dev/null
+out=$(hook bind '{"session_id":"nm2","prompt":"rename"}')
+ok "and takes it on rename, remembering the track for that name" '[ "$(jq -r .hookSpecificOutput.sessionTitle <<<"$out")" = "nm/one · 2" ] && [ "$(cat "$(nf "nm/one · 2")")" = nm/one ]'
+out=$(bash "$H/scripts/bind.sh" "$R" nm3 nm/one)
+ok "a third is offered 3" '[ "$(cat "$st/rename-nm3")" = "nm/one · 3" ]'
+hook bind '{"session_id":"nm3","prompt":"ok"}' >/dev/null
+out=$(hook bind '{"session_id":"nm3","prompt":"Yes, and fix the tests"}')
+ok "any other reply keeps the chat's name, and the offer stays open" '[ "$(jq -r ".hookSpecificOutput.sessionTitle // empty" <<<"$out")" = "" ] && [ -f "$st/rename-nm3" ]'
+out=$(bash "$H/scripts/bind.sh" "$R" nm3 nm/one)
+ok "and binding the same track again doesn't offer it again" '[ "$out" = "Bound this chat to nm/one." ]'
+out=$(hook bind '{"session_id":"nm3","prompt":"/trackside:start nm/one"}')
+ok "not even by a typed start" '[[ "$out" != *"reply rename"* ]]'
+out=$(hook end '{"session_id":"nm3","reason":"clear"}' >/dev/null; hook load '{"session_id":"nm4","source":"clear"}')
+ok "a /clear hands the track to the chat it starts, in the same process, even without a name" '[ "$(cat "$st/track-nm4" 2>/dev/null)" = nm/one ] && [[ "$out" == *"Active track: nm/one"* ]] && [ -f "$st/name-asked-nm4" ]'
+out=$(bash "$H/scripts/bind.sh" "$R" nm4 nm/one)
+ok "so the cleared chat isn't offered the name again" '[ "$out" = "Bound this chat to nm/one." ]'
+out=$(hook end '{"session_id":"nm4","reason":"clear"}' >/dev/null; printf '%s' '{"session_id":"nm5","source":"clear"}' | "$H/hooks/notice.sh")
+ok "and the user is shown its track" '[ "$(jq -r .systemMessage <<<"$out")" = "trackside: this chat is bound to nm/one." ]'
+out=$(hook end '{"session_id":"nm4","reason":"clear"}' >/dev/null; touch -t 202001010000 "$st"/cleared-*; hook load '{"session_id":"nm6","source":"clear"}')
+ok "a note over a minute old applies to no chat" '[ ! -f "$st/track-nm6" ]'
+rm -f "${st:?}"/cleared-*
+out=$(hook end '{"session_id":"nm-none","reason":"clear"}' >/dev/null; ls "$st"/cleared-* 2>/dev/null)
+ok "a clear of a chat on no track leaves no note" '[ -z "$out" ]'
+printf 'nm/one\n' > "$st/track-nm7"; printf 'nm/one · 5\n' > "$st/seen-nm7"; touch "$st/name-asked-nm7"
+out=$(bash "$H/scripts/bind.sh" "$R" nm7 nm/two)
+ok "a chat still named after the track it leaves is offered the new track's name" '[ "$(cat "$st/rename-nm7")" = nm/two ]'
+rm -f "$st/track-nm8"; printf 'nm/one · 6\n' > "$st/seen-nm8"; touch "$st/name-asked-nm8" "$st/unbound-nm8"
+out=$(bash "$H/scripts/bind.sh" "$R" nm8 nm/two)
+ok "so is one that was unbound in between" '[ "$(cat "$st/rename-nm8")" = nm/two ]'
+printf 'My notes\n' > "$st/seen-nm9"; touch "$st/name-asked-nm9"
+out=$(bash "$H/scripts/bind.sh" "$R" nm9 nm/two)
+ok "but not one with a name of its own" '[ "$out" = "Bound this chat to nm/two." ]'
+hook bind '{"session_id":"nm7","prompt":"no thanks"}' >/dev/null; bash "$H/scripts/bind.sh" "$R" nm7 off >/dev/null
+out=$(bash "$H/scripts/bind.sh" "$R" nm7 nm/two)
+ok "a track whose name the chat declined isn't offered again" '[ "$out" = "Bound this chat to nm/two." ] && [ ! -f "$st/rename-nm7" ]'
+hook bind '{"session_id":"nm10","prompt":"/trackside:start nm/two"}' >/dev/null
+hook bind '{"session_id":"nm10","prompt":"/trackside:start off"}' >/dev/null
+out=$(hook bind '{"session_id":"nm10","prompt":"rename"}')
+ok "unbinding drops an open offer, so a later rename names nothing" '[ "$(jq -r ".hookSpecificOutput.sessionTitle // empty" <<<"$out")" = "" ] && [ ! -f "$st/rename-nm10" ]'
+bash "$H/scripts/bind.sh" "$R" nm1 off >/dev/null
+out=$(hook load '{"session_id":"nm11","source":"fork","session_title":"nm/one"}')
+ok "a chat that took a track's name and left it keeps its forks off that track" '[ ! -f "$st/track-nm11" ] && [[ "$out" == *"The user unbound this chat"* ]]'
+hook load '{"session_id":"nm12","source":"fork","session_title":"nm/one · 2"}' >/dev/null
+out=$(hook bind '{"session_id":"nm12","prompt":"go on","session_title":"nm/one · 2"}')
+ok "a fork of a named chat stays on its track and is offered the next number once" '[ "$(cat "$st/track-nm12")" = nm/one ] && [ "$(jq -r ".systemMessage // empty" <<<"$out")" = "trackside: reply rename to name this chat \"nm/one · 3\" (another chat has \"nm/one · 2\"). Otherwise it keeps its name." ]'
+printf '\n**Name chats after the track:** no\n' >> "$K/nm/two/CONTEXT.md"
+out=$(hook bind '{"session_id":"nm13","prompt":"/trackside:start nm/two"}')
+ok "a track whose CONTEXT.md says not to name chats after it offers no name" '[ ! -f "$st/rename-nm13" ] && [[ "$out" != *"reply rename"* ]]'
+printf 'Review of 12\n' > "$st/seen-nm14"; bash "$H/scripts/bind.sh" "$R" nm14 nm/two >/dev/null
+hook load '{"session_id":"nm15","source":"fork","session_title":"Review of 12"}' >/dev/null
+ok "nor the next number to a fork there" '[ "$(cat "$st/track-nm15")" = nm/two ] && [ ! -f "$st/rename-nm15" ]'
+rm -rf "${K:?}/nm"; rm -f "${st:?}"/*-nm[0-9]* "${st:?}"/*-nm-none "$(nf "nm/one · 2")" "$(nf "nm/one · 5")" "$(nf "nm/one · 6")" "$(nf nm/one)" "$(nf nm/two)" "$(nf "Review of 12")"
 
 echo "--- a chat that moved to another folder"
 M=$(mktemp -d "${TMPDIR:-/tmp}/trackside-moved.XXXXXX")
 out=$(printf '{"session_id":"mv1","prompt":"/trackside:start shop/tickets","cwd":"%s"}' "$R/api" | CLAUDE_PROJECT_DIR="$M" "$H/hooks/bind.sh")
-ok "a chat that started elsewhere finds the trackside folder from where it works now" '[ "$(cat "$st/track-mv1" 2>/dev/null)" = shop/tickets ] && [ "$(jq -r .hookSpecificOutput.sessionTitle <<<"$out")" = shop/tickets ]'
+ok "a chat that started elsewhere finds the trackside folder from where it works now" '[ "$(cat "$st/track-mv1" 2>/dev/null)" = shop/tickets ] && [[ "$(jq -r ".systemMessage // empty" <<<"$out")" == *"reply rename to name this chat"* ]]'
 out=$(printf '{"session_id":"mv1","source":"resume","cwd":"%s"}' "$R/api" | CLAUDE_PROJECT_DIR="$M" "$H/hooks/load.sh")
 ok "and loads its track" '[[ "$out" == *"Active track: shop/tickets"* ]]'
 printf '{"session_id":"mv1","tool_name":"Edit","tool_input":{"file_path":"%s"},"cwd":"%s"}' "$R/api/cart.js" "$R/api" | CLAUDE_PROJECT_DIR="$M" "$H/hooks/track.sh"
@@ -256,7 +329,7 @@ edit n6 Edit "$K/shop/tickets/STATE.md"
 ok "and its save leaves the note for that chat" '[ -s "$note" ]'
 out=$(hook load '{"session_id":"s1","source":"resume"}')
 ok "the chat that left the note isn't told about it at a resume; its next message asks for the save" '[[ "$out" != *"left off"* && "$out" != *"Another chat"* ]] && [ -f "$st/owed-s1" ]'
-hook end '{"session_id":"s1","reason":"clear"}'
+hook end '{"session_id":"s1","reason":"clear"}'; rm -f "${st:?}"/cleared-*
 ok "once that chat ends or is cleared, the note says so" '[ "$(cut -f2,3 "$note")" = "s1	ended" ]'
 out=$(hook load '{"session_id":"n7","source":"clear","session_title":"shop/tickets"}')
 ok "and the next chat on the track fills the gap" '[[ "$out" == *"The last chat on this track left off on "*" with work STATE.md doesn'"'"'t have yet. Before your first reply, update its Current and Next step"*"marking those lines [assumed], and tell the user in one line"* ]] && [ -f "$st/gap-n7" ]'
@@ -391,11 +464,11 @@ rm -f "$st"/*-v1
 echo "--- compaction and /clear"
 printf 'shop/tickets\n' > "$st/track-cp1"; touch "$st/dirty-cp1"
 out=$(hook load '{"session_id":"cp1","source":"compact"}')
-ok "right after a compaction, a chat with unsaved work saves it, and the decisions the summary still holds" '[[ "$out" == *"This chat has work STATE.md doesn'"'"'t have yet. Before you go on, update its Current and Next step in one edit, from the summary and the code, and record any decision or ruled-out option the summary holds"* ]]'
-touch "$st/owed-cp1"; hook load '{"session_id":"cp1","source":"compact"}' >/dev/null
-ok "and the save it owed isn't asked for a second time at the next message" '[ ! -f "$st/owed-cp1" ]'
+ok "right after a compaction, a chat with unsaved work saves it, and the decisions the summary still holds" '[[ "$out" == *"This chat has work STATE.md doesn'"'"'t have yet. Before your first reply, update its Current and Next step in one edit, from the summary and the code, and record any decision or ruled-out option the summary holds"* ]]'
+ok "and the next message asks for it too" '[ -f "$st/owed-cp1" ]'
+rm -f "$st/owed-cp1"
 rm -f "$st/dirty-cp1"; out=$(hook load '{"session_id":"cp1","source":"compact"}')
-ok "one with nothing unsaved isn't asked" '[[ "$out" == *"compacted 3 time"* && "$out" != *"This chat has work STATE.md"* ]]'
+ok "one with nothing unsaved isn't asked" '[[ "$out" == *"compacted 2 time"* && "$out" != *"This chat has work STATE.md"* ]]'
 rm -f "${st:?}"/*-cp1
 out=$(hook load '{"session_id":"s1","source":"compact"}')
 ok "the first compaction is counted" '[[ "$out" == *"compacted 1 time"* && "$out" == *"Read on start"* && "$out" != *"/trackside:save"* ]]'
@@ -439,6 +512,11 @@ cp "$K/shop/tickets/STATE.md" "$st/state-backup"
 ok "the reload is two SessionStart hooks, so STATE.md has an output of its own" '[ "$(jq -r ".hooks.SessionStart[0].hooks[].command" "$H/hooks/hooks.json" | tr "\n" " ")" = "\${CLAUDE_PLUGIN_ROOT}/hooks/load.sh \${CLAUDE_PLUGIN_ROOT}/hooks/load-state.sh " ]'
 one=$(printf '{"session_id":"s1","source":"resume"}' | "$H/hooks/load.sh"); two=$(hook load-state '{"session_id":"s1","source":"resume"}')
 ok "load.sh carries FEATURE.md and CONTEXT.md, and load-state.sh STATE.md" '[[ "$one" == *"=== FEATURE.md"* && "$one" == *"=== CONTEXT.md"* && "$one" != *"=== STATE.md"* && "$two" == *"=== STATE.md"* && "$two" == "The state of shop/tickets"* ]]'
+out=$(printf '%s' '{"session_id":"cleared-n1","source":"clear","session_title":"shop/research"}' | "$H/hooks/notice.sh")
+ok "after /clear the user is shown the track the chat is bound to" '[ "$(jq -r .systemMessage <<<"$out")" = "trackside: this chat is bound to shop/research." ]'
+out=$(printf '%s' '{"session_id":"nobody-n2","source":"startup"}' | "$H/hooks/notice.sh")
+ok "and nothing for a chat that isn't bound" '[ -z "$out" ]'
+ok "the notice runs only when a chat starts: at startup, after /clear and in a fork, not at a resume or compaction" '[ "$(jq -r ".hooks.SessionStart[] | select(.hooks[].command | endswith(\"/notice.sh\")) | .matcher" "$H/hooks/hooks.json")" = "startup|clear|fork" ]'
 out=$(hook load-state '{"session_id":"nobody-v9","source":"startup"}')
 ok "the state hook says nothing in a chat that isn't bound" '[ -z "$out" ]'
 out=$(hook load-state '{"session_id":"cleared-v9","source":"clear","session_title":"shop/research"}')
@@ -466,6 +544,10 @@ ok "an unchanged index isn't rewritten" '[ "$(date -r "$K/INDEX.md" +%Y)" = 2020
 sed 's/line number 1 that/line number one that/' "$K/shop/tickets/STATE.md" > "$R/s.tmp" && mv "$R/s.tmp" "$K/shop/tickets/STATE.md"
 edit s1 Edit "$K/shop/tickets/STATE.md"
 ok "saving a changed state refreshes the index" 'grep -q "line number one that" "$K/INDEX.md"'
+mkdir -p "$K/shop/emails"; printf '# Track: shop/emails\n\n**Goal:** order emails\n' > "$K/shop/emails/CONTEXT.md"; printf '# State: shop/emails\n\n## Current\n- Ticket: none\n' > "$K/shop/emails/STATE.md"
+bash "$H/scripts/bind.sh" "$R" ix1 shop/emails >/dev/null
+ok "the start skill binding a new track lists it in the index right away" 'grep -q "| shop/emails |" "$K/INDEX.md"'
+rm -rf "${K:?}/shop/emails" "$st/track-ix1" "$st/title-ix1"; bash "$H/scripts/index.sh" "$R"
 touch -t "$(ago 20)" "$K/solo/main/STATE.md"
 out=$(bash "$H/scripts/status.sh" "$R")
 ok "a track untouched for 14+ days is flagged in the listing" '[[ "$out" == *"solo/main: Ticket: none (start: /trackside:start solo/main) (idle 20 days; close it with /trackside:close solo/main)"* ]]'
@@ -794,21 +876,23 @@ done
 printf -- '- 2026-10-22 · from shop/tickets · see .trackside/shop/tickets/NOTES.md\n- shop/tickets,shop/tickets; shop/ticketsx and api/shop/tickets stay\n' >> "$NK/shop/research/STATE.md"
 printf 'shop is a plain word here; .trackside/shop/FEATURE.md\n' >> "$NK/shop/FEATURE.md"
 mkdir -p "$NK/_archive/shop/old"; printf 'from shop/tickets\n' > "$NK/_archive/shop/old/STATE.md"
-printf 'shop/tickets\n' > "$NS/track-n1"; printf 'shop/tickets\n' > "$NS/track-n2"; printf 'shop/research\n' > "$NS/track-n3"
+printf 'shop/tickets\n' > "$NS/track-n1"; printf 'shop/tickets\n' > "$NS/seen-n1"; printf 'shop/tickets\n' > "$NS/track-n2"; printf 'shop/research\n' > "$NS/track-n3"
 printf 'x\n' > "$NS/stamp-shop@tickets"; printf 'x\n' > "$NS/stamp-shop@tickets.docs"; printf '1 2 x\n' > "$NS/deep-shop@tickets"
-printf 'shop/tickets\n' > "$NS/track-n4"; printf 'Review chat\n' > "$NS/name-n4"
+printf 'shop/tickets\n' > "$NS/track-n4"; printf 'Review chat\n' > "$NS/name-n4"; printf 'Review chat\n' > "$NS/seen-n4"
+printf 'shop/tickets\n' > "$NS/track-n5"; printf 'shop/tickets · 2\n' | tee "$NS/name-n5" > "$NS/seen-n5"
 NF=$(. "$H/scripts/common.sh"; name_file "$NK" "Review chat"); printf 'shop/tickets\n' > "$NF"
 out=$(bash "$H/scripts/rename.sh" "$N" shop/tickets build)
 ok "renaming a track moves its folder and updates its headers" '[ -f "$NK/shop/build/STATE.md" ] && [ ! -e "$NK/shop/tickets" ] && head -1 "$NK/shop/build/STATE.md" | grep -qx "# State: shop/build" && head -1 "$NK/shop/build/CONTEXT.md" | grep -qx "# Track: shop/build"'
-ok "its chats stay bound and get the new name at their next message" '[ "$(cat "$NS/track-n1")" = shop/build ] && [ "$(cat "$NS/track-n2")" = shop/build ] && [ "$(cat "$NS/title-n1")" = shop/build ] && [ "$(cat "$NS/track-n3")" = shop/research ] && [ ! -f "$NS/title-n3" ] && [[ "$out" == *"renamed at their next message: 2"* ]]'
-ok "a chat the user named stays bound, keeps its name, and its remembered track follows" '[ "$(cat "$NS/track-n4")" = shop/build ] && [ ! -f "$NS/title-n4" ] && [ "$(cat "$NF")" = shop/build ] && [[ "$out" == *"Chats kept bound: 3, renamed at their next message: 2"* ]]'
+ok "its chats stay bound and get the new name at their next message" '[ "$(cat "$NS/track-n1")" = shop/build ] && [ "$(cat "$NS/track-n2")" = shop/build ] && [ "$(cat "$NS/title-n1")" = shop/build ] && [ ! -f "$NS/title-n2" ] && [ "$(cat "$NS/track-n3")" = shop/research ] && [ ! -f "$NS/title-n3" ] && [[ "$out" == *"renamed at their next message: 2"* ]]'
+ok "a chat the user named stays bound, keeps its name, and its remembered track follows" '[ "$(cat "$NS/track-n4")" = shop/build ] && [ ! -f "$NS/title-n4" ] && [ "$(cat "$NF")" = shop/build ] && [[ "$out" == *"Chats kept bound: 4, renamed at their next message: 2"* ]]'
+ok "a numbered name trackside offered follows the track and keeps its number" '[ "$(cat "$NS/title-n5")" = "shop/build · 2" ]'
 ok "its stamps and deep-review record follow it" '[ -f "$NS/stamp-shop@build" ] && [ ! -e "$NS/stamp-shop@tickets" ] && [ -f "$NS/stamp-shop@build.docs" ] && [ ! -e "$NS/stamp-shop@tickets.docs" ] && [ -f "$NS/deep-shop@build" ] && [ ! -e "$NS/deep-shop@tickets" ]'
 ok "its stamp follows it" '[ -f "$NS/stamp-shop@build" ] && [ ! -e "$NS/stamp-shop@tickets" ]'
 ok "the index lists the new name" 'grep -q "| shop/build |" "$NK/INDEX.md" && ! grep -q "shop/tickets |" "$NK/INDEX.md"'
 ok "every reference to it in the trackside folder is updated" 'grep -q "from shop/build · see .trackside/shop/build/NOTES.md" "$NK/shop/research/STATE.md" && grep -q "^- shop/build,shop/build; shop/ticketsx and api/shop/tickets stay" "$NK/shop/research/STATE.md" && [[ "$out" == *"Files updated to the new name: 3"* ]]'
 ok "but not in the archive" 'grep -qx "from shop/tickets" "$NK/_archive/shop/old/STATE.md"'
 out=$(printf '{"session_id":"n1","prompt":"carry on"}' | CLAUDE_PROJECT_DIR="$N" "$H/hooks/bind.sh")
-ok "the bind hook renames that chat at its next message" '[ "$(jq -r .hookSpecificOutput.sessionTitle <<<"$out")" = shop/build ] && [ ! -f "$NS/title-n1" ]'
+ok "the bind hook renames that chat at its next message, and says so" '[ "$(jq -r .hookSpecificOutput.sessionTitle <<<"$out")" = shop/build ] && [ "$(jq -r .systemMessage <<<"$out")" = "trackside: this chat'"'"'s name follows its track'"'"'s new name: \"shop/build\"." ] && [ ! -f "$NS/title-n1" ]'
 out=$(bash "$H/scripts/rename.sh" "$N" shop store)
 ok "renaming a feature moves it and every binding and stamp under it" '[ -f "$NK/store/build/STATE.md" ] && [ ! -e "$NK/shop" ] && [ "$(cat "$NS/track-n2")" = store/build ] && [ "$(cat "$NS/track-n3")" = store/research ] && [ -f "$NS/stamp-store@build" ] && [ -f "$NS/stamp-store@build.docs" ] && head -1 "$NK/store/FEATURE.md" | grep -qx "# Feature: store" && head -1 "$NK/store/DECISIONS.md" | grep -qx "# Decisions: store" && head -1 "$NK/store/research/STATE.md" | grep -qx "# State: store/research"'
 ok "and updates its tracks' full names and paths, not the feature's name as a word" 'grep -q "from store/build · see .trackside/store/build/NOTES.md" "$NK/store/research/STATE.md" && grep -qx "shop is a plain word here; .trackside/store/FEATURE.md" "$NK/store/FEATURE.md"'
@@ -1024,7 +1108,11 @@ printf '#!/bin/sh\necho "$*" >> "%s/calls"\ncase "$3" in 12) echo "MERGED 2026-1
 out=$(PATH="$GB:$PATH" bash "$H/scripts/prs.sh" "$P" shop/tickets)
 ok "it reports the state of each pull request the state names as <repo>#<number>" '[ "$out" = "api#12: merged 2026-10-24
 web#13: open" ]'
-ok "it only reads, and skips lines already marked merged and names that aren't a listed repo" '! grep -qv "^pr view " "$GB/calls" && ! grep -qE "^pr view (11|16) " "$GB/calls" && grep -q "^pr view 14 " "$GB/calls"'
+ok "it only reads from gh, and skips lines already marked merged and names that aren't a listed repo" '! grep -qv "^pr view " "$GB/calls" && ! grep -qE "^pr view (11|16) " "$GB/calls" && grep -q "^pr view 14 " "$GB/calls"'
+ok "it marks a merged one on the line that names it, and leaves open ones and lines already marked alone" 'grep -qx -- "- 2026-10-23 · T-1 · abc1234 · tests pass · api#12 (merged 2026-10-24)" "$PK/shop/tickets/STATE.md" && grep -qx -- "- reviewing web #13 \[verified\]" "$PK/shop/tickets/STATE.md" && grep -qx -- "- 2026-10-22 · T-0 · def5678 · tests pass · api#11 (merged 2026-10-22)" "$PK/shop/tickets/STATE.md" && [ "$(grep -c "merged" "$PK/shop/tickets/STATE.md")" = 2 ]'
+printf -- '- api#120 and api#12 shipped together\n' >> "$PK/shop/tickets/STATE.md"
+PATH="$GB:$PATH" bash "$H/scripts/prs.sh" "$P" shop/tickets >/dev/null
+ok "a mark goes after the exact number, not a longer one that starts with it" 'grep -qx -- "- api#120 and api#12 (merged 2026-10-24) shipped together" "$PK/shop/tickets/STATE.md"'
 for i in $(seq 1 12); do printf -- '- api#%s\n' "$((100 + i))"; done >> "$PK/shop/tickets/STATE.md"; rm -f "$GB/calls"
 PATH="$GB:$PATH" bash "$H/scripts/prs.sh" "$P" shop/tickets >/dev/null
 ok "it asks about at most 10 per run" '[ "$(wc -l < "$GB/calls" | tr -d " ")" = 10 ]'
@@ -1032,7 +1120,7 @@ NG=$(mktemp -d "${TMPDIR:-/tmp}/trackside-nogh.XXXXXX")
 for c in dirname cat grep sort git awk sed tr head wc; do ln -s "$(command -v "$c")" "$NG/$c"; done
 out=$(PATH="$NG" /bin/bash "$H/scripts/prs.sh" "$P" shop/tickets; echo "exit=$?")
 ok "without gh it prints nothing and succeeds" '[ "$out" = "exit=0" ]'
-ok "next runs it, read-only, and done names the pull request in the Done-log line" 'grep -q "scripts/prs.sh" "$H/skills/next/SKILL.md" && grep -q "It only reads" "$H/skills/next/SKILL.md" && grep -q "add it to the ticket'"'"'s Done-log line as \`<repo>#<number>\`" "$H/skills/done/SKILL.md"'
+ok "next runs it, read-only, and done names the pull request in the Done-log line" 'grep -q "scripts/prs.sh" "$H/skills/next/SKILL.md" && grep -q "It only reads from GitHub" "$H/skills/next/SKILL.md" && grep -q "add it to the ticket'"'"'s Done-log line as \`<repo>#<number>\`" "$H/skills/done/SKILL.md"'
 ok "done asks about moving repo lessons in the same request as the commit, not separately" 'grep -q "list each one in the same request" "$H/skills/done/SKILL.md" && grep -q "approving the commit approves those moves too" "$H/skills/done/SKILL.md"'
 rm -rf "$P" "$GB" "$NG"
 
@@ -1067,7 +1155,7 @@ xh bind '{"session_id":"x3","prompt":"/trackside:start off"}' >/dev/null
 out=$(bash "$H/scripts/bind.sh" "$X" x3 off)
 ok "a typed /trackside:start off still tells the user their work wasn't saved" '[ "$out" = "Unbound this chat from solo/one. Its work since the last save wasn'"'"'t saved there." ] && [ ! -f "$XS/off-x3" ]'
 out=$(xh bind '{"session_id":"x4","prompt":"/trackside:start solo/one","session_title":"my-review"}')
-ok "a chat renamed after it started keeps its name when it binds" '[ -z "$out" ] && [ "$(cat "$XS/name-x4")" = my-review ] && [ "$(cat "$XS/track-x4")" = solo/one ] && [ "$(cat "$(. "$H/scripts/common.sh"; name_file "$XK" my-review)")" = solo/one ]'
+ok "a chat renamed after it started keeps its name when it binds" '[ "$(jq -r ".hookSpecificOutput.sessionTitle // empty" <<<"$out")" = "" ] && [ "$(cat "$XS/name-x4")" = my-review ] && [ "$(cat "$XS/track-x4")" = solo/one ] && [ "$(cat "$(. "$H/scripts/common.sh"; name_file "$XK" my-review)")" = solo/one ]'
 
 printf 'solo/one\n' > "$XS/track-x5"
 out=$(xh track "{\"session_id\":\"x5\",\"tool_name\":\"Edit\",\"tool_input\":{\"file_path\":\"$X/api/a.js\"}}")

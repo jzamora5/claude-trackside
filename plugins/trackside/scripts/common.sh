@@ -61,27 +61,101 @@ bind_chat() {
     printf '%s' "$before"
     return 2
   fi
-  # A reminder or an unbinding note left from before no longer applies once the chat is on another track.
+  # A reminder, an unbinding note or an offer of a name left from before no longer applies once the chat is on another
+  # track.
   if [ "$before" != "$target" ]; then
-    rm -f "$1/.state/nudged-$2" "$1/.state/off-$2" "$1/.state/owed-$2"
+    rm -f "$1/.state/nudged-$2" "$1/.state/off-$2" "$1/.state/owed-$2" "$1/.state/rename-$2" "$1/.state/rename-shown-$2"
     [ -z "$before" ] || note_drop "$(note_file "$1" "$before")" "$2"
   fi
   rm -f "$1/.state/unbound-$2"
   printf '%s\n' "$target" > "$1/.state/track-$2"
+  title_map "$1" "$2" "$target"
   printf '%s' "$target"
 }
 
+# title_map <keep> <session id> <track|off>: remembers the track the chat's title is on, whatever the title, so a fork or
+# a cleared chat with that title follows where the user left it, a track's name included.
+title_map() {
+  local t
+  t=$(cat "$1/.state/seen-$2" 2>/dev/null)
+  [ -n "$t" ] && [[ "$t" != *" (unbound)" ]] && map_name "$1" "$t" "$3"
+  return 0
+}
+
 # unbind_chat <keep> <session id>: unbinds the chat, dropping its unsaved-work marker and its line in the track's
-# note, and prints the chat's new name. "<feature>/<track> (unbound)" never reads as a track, so the chat isn't rebound
-# by its name; until the app shows that name, unbound-<session> keeps a compaction or resume from rebinding it.
+# note, and prints the track it was on. unbound-<session> keeps a compaction or resume from rebinding it by its name,
+# and end.sh hands "off" to the chat a /clear starts.
 unbind_chat() {
   local before
   before=$(cat "$1/.state/track-$2" 2>/dev/null || true)
   [ -n "$before" ] || return 0
   note_drop "$(note_file "$1" "$before")" "$2"
-  rm -f "$1/.state/track-$2" "$1/.state/dirty-$2" "$1/.state/saved-$2" "$1/.state/nudged-$2" "$1/.state/owed-$2"
+  rm -f "$1/.state/track-$2" "$1/.state/dirty-$2" "$1/.state/saved-$2" "$1/.state/nudged-$2" "$1/.state/owed-$2" \
+    "$1/.state/rename-$2" "$1/.state/rename-shown-$2"
   touch "$1/.state/unbound-$2"
-  printf '%s (unbound)' "$before"
+  title_map "$1" "$2" off
+  printf '%s' "$before"
+}
+
+# A /clear starts a new session with no link to the one it ends, except that both run in the same Claude Code process,
+# whose id a hook sees as $PPID. end.sh leaves cleared-<process id>: the track, or "off" when the user unbound the chat.
+# cleared_note <keep> <process id> prints it while it's under a minute old, so the note of an earlier clear in the same
+# process can't apply.
+cleared_note() {
+  local f="$1/.state/cleared-$2"
+  [ -n "$2" ] && [ -n "$(find "$f" -mmin -1 2>/dev/null)" ] && cat "$f"
+}
+
+# name_offer <keep> <session id> <name>: <name>, or, when another chat has it, "<name> · 2" or the next number no chat
+# has. A chat's name is the title trackside last saw for it (seen-<session>); a chat bound before trackside offered names
+# and recorded titles counts as named after its track, as trackside named chats then. Prints nothing when this chat
+# already has <name>.
+name_offer() {
+  local st="$1/.state" want="$3" n=1 s
+  [ "$(cat "$st/seen-$2" 2>/dev/null)" != "$want" ] || return 0
+  while :; do
+    s=$( { grep -lxF -- "$want" "$st"/seen-* 2>/dev/null
+           [ "$n" != 1 ] || ! keep_title "$3" || grep -lxF -- "$want" "$st"/track-* 2>/dev/null | while IFS= read -r f; do
+             f=${f##*/track-}; [ -f "$st/seen-$f" ] || [ -f "$st/name-$f" ] || [ -f "$st/name-asked-$f" ] || printf 'track-%s\n' "$f"; done
+         } | sed 's#.*/##' | grep -vx -e "seen-$2" -e "track-$2" | head -1)
+    [ -n "$s" ] || { printf '%s' "$want"; return 0; }
+    n=$((n + 1)); want="$3 · $n"
+  done
+}
+
+# offer_name <keep> <session id> <track before> <track>: when a chat moves to a track it wasn't offered before, the first
+# time it's bound or while its name is still the one offered for another track, leaves the name to offer in
+# rename-<session> and records the track in name-asked-<session>, so a declined offer isn't made again. The prompt hook
+# takes the offer on the user's "rename". It carries over /clear (cleared_note).
+offer_name() {
+  local st="$1/.state" cur want
+  [ "$3" != "$4" ] && names_chats "$1" "$4" || return 1
+  if [ -f "$st/name-asked-$2" ]; then
+    [ "$(cat "$st/name-asked-$2")" != "$4" ] || return 1
+    cur=$(cat "$st/seen-$2" 2>/dev/null); cur=${cur% · [0-9]*}
+    [ "$cur" != "$4" ] && keep_title "$cur" && [[ "$cur" != *" (unbound)" ]] || return 1
+  fi
+  printf '%s\n' "$4" > "$st/name-asked-$2"
+  want=$(name_offer "$1" "$2" "$4")
+  [ -n "$want" ] || return 1
+  printf '%s\n' "$want" > "$st/rename-$2"
+  rm -f "$st/rename-shown-$2"
+}
+
+# offer_line <keep> <session id>: the line that offers the chat the name in rename-<session>, saying, when it's
+# numbered, which name another chat has: this chat's own when they share it, as a fork does, else the unnumbered one.
+offer_line() {
+  local st="$1/.state" want base cur
+  want=$(cat "$st/rename-$2" 2>/dev/null)
+  [ -n "$want" ] || return 0
+  base=${want% · [0-9]*}
+  cur=$(cat "$st/seen-$2" 2>/dev/null)
+  [ -n "$cur" ] && grep -lxF -- "$cur" "$st"/seen-* 2>/dev/null | grep -qvx "$st/seen-$2" && base=$cur
+  if [ "$base" != "$want" ]; then
+    printf 'reply rename to name this chat "%s" (another chat has "%s"). Otherwise it keeps its name.' "$want" "$base"
+  else
+    printf 'reply rename to name this chat "%s" after its track. Otherwise it keeps its name.' "$want"
+  fi
 }
 
 # A name the user gave a chat survives /clear, so it can stand in for the track name in the title: trackside records
@@ -107,6 +181,10 @@ named_track() { [ -z "$2" ] || cat "$(name_file "$1" "$2")" 2>/dev/null || true;
 # starts_clean <keep> <feature>/<track>: true for a track whose CONTEXT.md says each item starts clean, so only
 # CONTEXT.md and LESSONS.md carry over from one item to the next.
 starts_clean() { grep -qiE '^\*\*Each item starts clean:\*\*[[:space:]]*yes' "$1/$2/CONTEXT.md" 2>/dev/null; }
+
+# names_chats <keep> <feature>/<track>: false for a track whose CONTEXT.md says "**Name chats after the track:** no",
+# such as one whose own rules name its chats, so trackside offers its chats no name.
+names_chats() { ! grep -qiE '^\*\*Name chats after the track:\*\*[[:space:]]*no' "$1/$2/CONTEXT.md" 2>/dev/null; }
 
 # save_due <state dir> <session id>: true once TRACKSIDE_SAVE_MINUTES (default 15; 0 means always) have passed since
 # this chat last saved its track, or when it hasn't saved yet. The clock is this chat's own last save: another
@@ -322,19 +400,28 @@ reload_budget=$(( hook_limit - 700 ))
 cut_over=$(( hook_limit - 200 ))
 cut_to=$(( hook_limit - 400 ))
 
-# chat_binding <keep> <session id> <title>: the track a starting chat is on: its binding, else the track its title
-# names when trackside named the chat, else the track remembered for a name the user gave it. Reads only, so the two
-# reload hooks, which run in parallel, agree on it.
+# chat_binding <keep> <session id> <title> [process id after /clear]: the track a starting chat is on: its binding,
+# else the track of the chat a /clear just ended, else the track remembered for its title, else the track its title
+# names. Reads only, so the reload hooks, which run in parallel, agree on it.
 chat_binding() {
-  local b named
+  local b named c
   b=$(cat "$1/.state/track-$2" 2>/dev/null || true)
   [ -n "$b" ] || [ ! -f "$1/.state/unbound-$2" ] || return 0
+  # The chat this one cleared, when the hook passes the process id after a /clear.
+  if [ -z "$b" ] && [ -n "${4:-}" ]; then
+    c=$(cleared_note "$1" "$4")
+    [ "$c" != off ] || return 0
+    [ -n "$c" ] && [ -f "$1/$c/STATE.md" ] && b="$c"
+  fi
+  # Where the user last left a chat with this title (title_map) comes before the track a title names, so a chat that
+  # took a track's name and then left the track doesn't go back to it.
+  if [ -z "$b" ] && [ -n "$3" ] && [[ "$3" != *" (unbound)" ]]; then
+    named=$(named_track "$1" "$3")
+    [ "$named" != off ] || return 0
+    [ -n "$named" ] && [ -f "$1/$named/STATE.md" ] && b="$named"
+  fi
   if [ -z "$b" ] && [[ "$3" == */* ]] && valid_name "${3%%/*}" && valid_name "${3#*/}" && [ -f "$1/$3/STATE.md" ]; then
     b="$3"
-  fi
-  if [ -z "$b" ] && [ -n "$3" ] && ! keep_title "$3"; then
-    named=$(named_track "$1" "$3")
-    [ -n "$named" ] && [ -f "$1/$named/STATE.md" ] && b="$named"
   fi
   printf '%s' "$b"
 }
