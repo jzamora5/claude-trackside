@@ -93,7 +93,7 @@ Each output always includes `STATE.md`'s Inbox, Current and Next step. It adds w
 
 trackside learns the compaction size from the first automatic compaction it sees for each model, or takes it from `CLAUDE_CODE_AUTO_COMPACT_WINDOW` when you set it.
 
-**`/trackside:fresh`** saves the track, then clears the chat. In the desktop app it asks the app to clear the chat when the reply ends; in the terminal it tells you to type `/clear`. Either way, the cleared chat reloads the track on its own. It runs:
+**`/trackside:fresh`** saves the track, then clears the chat. In the desktop app it asks the app to clear the chat when the reply ends. In VS Code and the terminal, where `/clear` would leave the chat in the list beside a new one with the same name, it gives you a `/compact` line to type instead, which keeps one chat; that compaction starts the count of compactions over, like a clear. Either way, you type only `/trackside:fresh`, and the chat reloads the track on its own. It runs:
 - when you type it;
 - when you ask to clear this chat;
 - when you say yes to a question that said plainly it would clear this chat, such as trackside's offer.

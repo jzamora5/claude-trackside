@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.26.2 · 2026-11-12
+
+`/trackside:fresh` no longer leaves a second chat in VS Code and the terminal. There, `/clear` starts a new conversation and keeps the old one in the list, under the same name when the chat has one. Where fresh can't clear the chat itself, it now gives you a `/compact` line to type, which keeps one chat, and that compaction starts the count of compactions over, like a clear. In the desktop app it still clears the chat. You type `/trackside:fresh` the same way everywhere.
+
 ## 0.26.1 · 2026-11-11
 
 The deep review runs on its own at most once a week per track (`TRACKSIDE_REVIEW_DAYS`, default 7; 0 turns it off). Before, it ran whenever a track's notes grew by 10 KB: on busy tracks with about 100 KB of notes that was every day or two (13 reviews of `reviews/prs` in 15 days), and each handed you 8 to 19 items. The 10 KB and two-week triggers still decide whether a review is due once the week has passed, and `/trackside:audit` runs one whenever you ask.

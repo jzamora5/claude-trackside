@@ -104,11 +104,20 @@ if [ -n "$worktree" ]; then
 fi
 
 if [ "$src" = "compact" ]; then
-  c=$(cat "$st/compactions-$sid" 2>/dev/null || true)
-  [[ "$c" =~ ^[0-9]+$ ]] || c=0
-  n=$(( c + 1 ))
-  echo "$n" > "$st/compactions-$sid"
-  add "This chat has been compacted $n time(s); the track's files reloaded with this are authoritative over the summary."
+  if [ -n "$(find "$st/fresh-$sid" -mmin -60 2>/dev/null)" ]; then
+    # /trackside:fresh asked for this compaction where it can't clear the chat, since /clear in VS Code and the terminal
+    # leaves the chat in the list beside a new one. It starts the chat over like a clear, so it doesn't count toward
+    # the next offer of a fresh chat.
+    rm -f "$st/compactions-$sid" "$st/offered-$sid" "$st/judged-$sid" "$st/health-$sid"
+    add "This chat was just compacted for /trackside:fresh; the track's files reloaded with this are authoritative over the summary."
+  else
+    c=$(cat "$st/compactions-$sid" 2>/dev/null || true)
+    [[ "$c" =~ ^[0-9]+$ ]] || c=0
+    n=$(( c + 1 ))
+    echo "$n" > "$st/compactions-$sid"
+    add "This chat has been compacted $n time(s); the track's files reloaded with this are authoritative over the summary."
+  fi
+  rm -f "$st/fresh-$sid"
   add "Re-read the files FEATURE.md and CONTEXT.md list under \"Read on start\"; the summary may have dropped them."
   # Right after a compaction the context is at its smallest, so a save costs the least it ever will in this chat, and
   # the summary is the last place this session's recent decisions still exist. The request also comes with the next

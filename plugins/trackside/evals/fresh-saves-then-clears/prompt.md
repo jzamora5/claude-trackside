@@ -1,5 +1,5 @@
 ---
-description: "/trackside:fresh saves the track first, then tells the user to /clear when it can't clear the chat itself."
+description: "/trackside:fresh saves the track first, then tells the user to /compact, which keeps one chat, when it can't clear the chat itself."
 max_turns: 24
 timeout_seconds: 700
 allowed_tools: [Read, Edit, Write, Glob, Grep, Skill, Bash, Agent]

@@ -151,12 +151,14 @@ j_clear() {  # rows 8, 26, 36
   send c "Which workspace is this?"
   ok "row 26: and says so" has "$reply" demo/tickets
   ok "row 26: the name stays through /clear" ne "$(title_of c)" demo/tickets
+  s=$sid
   send c "/trackside:fresh"
   # Its save may run the handoff check in the background and finish once it's back.
-  has "$reply" "/clear" || settle c 180 || send c "Go on."
-  ok "row 36: /trackside:fresh outside the app says to type /clear" has "$reply" "/clear"
-  send c "/clear"
-  ok "row 36: the chat after it is on the track" eq "$(track_of "$sid")" demo/tickets
+  has "$reply" "/compact" || settle c 180 || send c "Go on."
+  ok "row 36: /trackside:fresh outside the app has the user compact, which keeps one chat" has "$reply" "/compact"
+  send c "/compact Keep only the current task; the track's files hold the rest."
+  ok "row 36: the chat stays the same session, on the track" bash -c "[ '$sid' = '$s' ] && [ '$(track_of "$s")' = demo/tickets ]"
+  ok "row 36: and the compaction starts the count over, like a clear" bash -c "[ ! -f '$st/compactions-$s' ] && grep -q 'just compacted for /trackside:fresh' '$J/c.out'"
   close c
 }
 

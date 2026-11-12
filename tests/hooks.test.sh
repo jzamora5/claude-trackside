@@ -479,6 +479,13 @@ ok "which offers it" '[[ "$out" == *"This chat has compacted 2 time(s). Offer on
 echo bogus > "$st/compactions-s1"
 out=$(hook load '{"session_id":"s1","source":"compact"}')
 ok "a corrupt counter restarts at 1" '[[ "$out" == *"compacted 1 time"* ]]'
+touch "$st/fresh-s1"
+out=$(hook load '{"session_id":"s1","source":"compact"}')
+ok "a compaction /trackside:fresh asked for starts the count over, like a clear" '[ ! -f "$st/compactions-s1" ] && [ ! -f "$st/fresh-s1" ] && [[ "$out" == *"just compacted for /trackside:fresh"* && "$out" == *"Active track: shop/tickets"* ]]'
+touch -t 202001010000 "$st/fresh-s1"
+out=$(hook load '{"session_id":"s1","source":"compact"}')
+ok "but not once the request is over an hour old" '[ "$(cat "$st/compactions-s1")" = 1 ] && [ ! -f "$st/fresh-s1" ]'
+ok "fresh has the user compact where it can't clear the chat, its one command pre-approved" 'grep -q "^allowed-tools: Bash(touch \"\${CLAUDE_PROJECT_DIR}/.trackside/.state/fresh-\${CLAUDE_SESSION_ID}\")" "$H/skills/fresh/SKILL.md" && grep -q "To clear this chat, type: \`/compact" "$H/skills/fresh/SKILL.md"'
 out=$(hook load '{"session_id":"s1","source":"clear"}')
 ok "clear resets the count and keeps the binding" '[ ! -f "$st/compactions-s1" ] && [[ "$out" == *"Active track: shop/tickets"* ]]'
 out=$(hook load '{"session_id":"s5","source":"clear","session_title":"shop/research"}')
