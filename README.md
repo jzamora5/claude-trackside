@@ -99,6 +99,7 @@ These environment variables change the defaults:
 | `TRACKSIDE_JUDGE_MODEL` | haiku | Model the judge runs on |
 | `TRACKSIDE_IDLE_DAYS` | 14 | Days without a state update before a track is flagged as idle |
 | `TRACKSIDE_STATE_DAYS` | 30 | Days before runtime files of old sessions are cleared |
+| `TRACKSIDE_REVIEW_DAYS` | 7 | Minimum days between automatic deep reviews of a track; 0 turns them off |
 
 Saving STATE.md outside a skill is a normal file edit, so with default permissions it asks each time. To allow edits to `.trackside/` in a project, add this to its `.claude/settings.json`, or accept the agent's offer when it creates the folder:
 
@@ -134,7 +135,7 @@ Session handoff tools write a summary when you ask for one, for one session or o
 
 ## Status
 
-Version 0.26.0, early ([changelog](CHANGELOG.md)). Until 0.15.0 the plugin was called keep; two other Claude Code plugins use that name, and Claude Code runs the hooks of only one enabled plugin per name.
+Version 0.26.1, early ([changelog](CHANGELOG.md)). Until 0.15.0 the plugin was called keep; two other Claude Code plugins use that name, and Claude Code runs the hooks of only one enabled plugin per name.
 
 - **Hooks and scripts:** tested with simulated hook inputs (`bash tests/hooks.test.sh`) on macOS's bash 3.2.
 - **Agent behavior:** 30 behaviors are checked in real headless sessions with `claude plugin eval` (`bash tests/evals.sh`, cases in `plugins/trackside/evals/`).

@@ -941,7 +941,11 @@ out=$(au due);                                         ok "a review whose result
 au reviewed;                                           ok "a handled review is recorded" '[ -f "$AS/deep-app@main" ] && [ ! -f "$AS/deep-app@main.started" ]'
 out=$(au due);                                         ok "then the track isn't due" '[ -z "$out" ]'
 head -c 11000 < /dev/zero | tr '\0' 'm' >> "$AK/app/main/NOTES.md"
-out=$(au due);                                         ok "notes that grew by 10 KB make it due again" '[ "$out" = due ]'
+out=$(au due);                                         ok "notes that grew by 10 KB within a week of the last review don't make it due yet" '[ -z "$out" ]'
+read -r _ size fp < "$AS/deep-app@main"; printf '%s %s %s\n' "$(( $(date +%s) - 8 * 86400 ))" "$size" "$fp" > "$AS/deep-app@main"
+out=$(TRACKSIDE_REVIEW_DAYS=0 au due);                 ok "TRACKSIDE_REVIEW_DAYS=0 turns automatic reviews off" '[ -z "$out" ]'
+out=$(TRACKSIDE_REVIEW_DAYS=10 au due);                ok "TRACKSIDE_REVIEW_DAYS moves the wait" '[ -z "$out" ]'
+out=$(TRACKSIDE_REVIEW_DAYS=soon au due);              ok "a week after the last review they do, and a bad TRACKSIDE_REVIEW_DAYS falls back to 7" '[ "$out" = due ]'
 au reviewed
 read -r _ size fp < "$AS/deep-app@main"; printf '%s %s %s\n' "$(( $(date +%s) - 1300000 ))" "$size" "$fp" > "$AS/deep-app@main"
 out=$(au due);                                         ok "two weeks without changes isn't enough" '[ -z "$out" ]'

@@ -143,12 +143,18 @@ if [ "$mode" = due ] || [ "$mode" = reviewed ]; then
     rm -f "$deep.started"
     exit 0
   fi
-  # A deep review is due when the notes grew by 10 KB since the last one, or two weeks passed with changes. It's
-  # recorded only once its result is handled, so a result lost to /clear is retried; a review started in the
-  # last hour is still running.
+  # A deep review is due when the notes grew by 10 KB since the last one, or two weeks passed with changes, but at most
+  # once every TRACKSIDE_REVIEW_DAYS days (default 7; 0 turns automatic reviews off): on a busy track the notes grow
+  # 10 KB in a day or two, and daily reviews handed the user about ten items each time, while what a review catches
+  # builds up over days. It's recorded only once its result is handled, so a result lost to /clear is retried; a review
+  # started in the last hour is still running.
+  days="${TRACKSIDE_REVIEW_DAYS:-7}"
+  [[ "$days" =~ ^[0-9]+$ ]] || days=7
+  [ "$days" != 0 ] || exit 0
   [ -n "$(find "$deep.started" -mmin -60 2>/dev/null)" ] && exit 0
   if [ -f "$deep" ]; then
     read -r last lsize lfp < "$deep"
+    [ $(( now - ${last:-0} )) -ge $(( days * 86400 )) ] || exit 0
     [ $(( ns - ${lsize:-0} )) -ge 10240 ] || { [ $(( now - ${last:-0} )) -ge 1209600 ] && [ "$fp" != "$lfp" ]; } || exit 0
   elif [ "$ns" -lt 10240 ]; then
     printf '%s %s %s\n' "$now" "$ns" "$fp" > "$deep"
